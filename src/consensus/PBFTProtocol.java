@@ -67,6 +67,8 @@ public class PBFTProtocol extends GenericProtocol {
 		}
 	}
 
+
+
 	@Override
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
 		try {
@@ -86,6 +88,8 @@ public class PBFTProtocol extends GenericProtocol {
 		
 		// TODO: Must add handlers for requests and messages and register message serializers
 		
+		registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
+		
 		registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
         registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
         registerChannelEventHandler(peerChannel, OutConnectionDown.EVENT_ID, this::uponOutConnectionDown);
@@ -97,6 +101,7 @@ public class PBFTProtocol extends GenericProtocol {
 		try { Thread.sleep(10 * 1000); } catch (InterruptedException e) { }
 		
 		// TODO: Open connections to all nodes in the (initial) view 
+		view.forEach(h -> {openConnection(h);});
 		
 	}
 	
@@ -124,6 +129,12 @@ public class PBFTProtocol extends GenericProtocol {
     private void uponInConnectionDown(InConnectionDown event, int channel) {
         logger.warn(event);
     }
+
+	/* --------------------------------------- Request Manager Functions ----------------------------------- */
+
+	private void uponProposeRequest(ProposeRequest req, short id){
+		view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
+	}
 	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
