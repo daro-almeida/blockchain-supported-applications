@@ -1,34 +1,26 @@
 package consensus;
 
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Properties;
-
+import consensus.messages.PrePrepareMessage;
+import consensus.requests.ProposeRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
-import consensus.requests.ProposeRequest;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
-import pt.unl.fct.di.novasys.channel.tcp.events.InConnectionDown;
-import pt.unl.fct.di.novasys.channel.tcp.events.InConnectionUp;
-import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionDown;
-import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionFailed;
-import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionUp;
+import pt.unl.fct.di.novasys.channel.tcp.events.*;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.security.*;
+import java.security.cert.CertificateException;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Properties;
 
 
 public class PBFTProtocol extends GenericProtocol {
@@ -48,13 +40,15 @@ public class PBFTProtocol extends GenericProtocol {
 	
 	//TODO: add protocol state (related with the internal operation of the view)
 	private Host self;
+	private int viewN;
 	private final List<Host> view;
 	private int seq;
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
-	
+
 		this.seq = 0;
+		this.viewN = 0;
 
 		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
@@ -85,28 +79,35 @@ public class PBFTProtocol extends GenericProtocol {
 		peerProps.put(MultithreadedTCPChannel.ADDRESS_KEY, props.getProperty(ADDRESS_KEY));
 		peerProps.setProperty(TCPChannel.PORT_KEY, props.getProperty(PORT_KEY));
 		int peerChannel = createChannel(TCPChannel.NAME, peerProps);
-		
-		// TODO: Must add handlers for requests and messages and register message serializers
-		
-		registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
-		
-		registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
-        registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
-        registerChannelEventHandler(peerChannel, OutConnectionDown.EVENT_ID, this::uponOutConnectionDown);
-        registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
-        registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
 
-		logger.info("Standing by to extablish connections (10s)");
+		logger.info("Standing by to establish connections (10s)");
+
+		registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
+
+		registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
+		registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
+		registerChannelEventHandler(peerChannel, OutConnectionDown.EVENT_ID, this::uponOutConnectionDown);
+		registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
+		registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
+
+		try { Thread.sleep(10 * 1000); } catch (InterruptedException ignored) { }
 		
-		try { Thread.sleep(10 * 1000); } catch (InterruptedException e) { }
-		
-		// TODO: Open connections to all nodes in the (initial) view 
-		view.forEach(h -> {openConnection(h);});
-		
+		view.forEach(this::openConnection);
 	}
-	
-	//TODO: Add event (messages, requests, timers, notifications) handlers of the protocol
-	
+
+	/* --------------------------------------- Message Handlers ----------------------------------- */
+
+	/* --------------------------------------- Request Handlers ----------------------------------- */
+
+	private void uponProposeRequest(ProposeRequest req, short sourceProto) {
+		logger.info("Received request: " + req);
+		view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
+	}
+
+	/* --------------------------------------- Notification Handlers ----------------------------------- */
+
+	/* --------------------------------------- Timer Handlers ----------------------------------- */
+
 	/* --------------------------------------- Connection Manager Functions ----------------------------------- */
 	
     private void uponOutConnectionUp(OutConnectionUp event, int channel) {
@@ -129,12 +130,6 @@ public class PBFTProtocol extends GenericProtocol {
     private void uponInConnectionDown(InConnectionDown event, int channel) {
         logger.warn(event);
     }
-
-	/* --------------------------------------- Request Manager Functions ----------------------------------- */
-
-	private void uponProposeRequest(ProposeRequest req, short id){
-		view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
-	}
 	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
