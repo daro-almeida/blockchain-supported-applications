@@ -1,0 +1,18 @@
+To build:
+    - you need Maven installed
+    - execute "mvn package" in the root folder
+    - a jar file will be placed in the "deploy" folder
+
+To run:
+    - in folder "deploy" execute:
+        java -Dlog4j.configurationFile=log4j2.xml -jar csd2223-proj1.jar base_port=<base_port> initial_membership=<membership> crypto_name=<crypto_name> submit=<submit>
+    - example to run 3 replica:
+        java -Dlog4j.configurationFile=log4j2.xml -jar csd2223-proj1.jar base_port=5000 initial_membership=localhost:5000,localhost:5002,localhost:5004 crypto_name=node1
+        java -Dlog4j.configurationFile=log4j2.xml -jar csd2223-proj1.jar base_port=5002 initial_membership=localhost:5000,localhost:5002,localhost:5004 crypto_name=node2 submit=true
+        java -Dlog4j.configurationFile=log4j2.xml -jar csd2223-proj1.jar base_port=5004 initial_membership=localhost:5000,localhost:5002,localhost:5004 crypto_name=node3
+
+ The parameters are:
+    - base_port: the base port to use for the replica, the example uses base_port and base_port+1, do not use sequential ports!
+    - initial_membership: the initial membership of the group, consisting in ip:port pairs separated by commas
+    - crypto_name: the name of the private key to use for the replica
+    - submit: if true, the replica simulate clients and submit operations

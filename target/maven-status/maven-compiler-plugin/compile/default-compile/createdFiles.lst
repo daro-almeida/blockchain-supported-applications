@@ -1,0 +1,12 @@
+app/RandomGenerationOperationApp$1.class
+consensus/notifications/CommittedNotification.class
+consensus/requests/ProposeRequest.class
+consensus/messages/PrepareMessage$1.class
+consensus/messages/PrepareMessage.class
+consensus/PBFTProtocol.class
+utils/SignaturesHelper.class
+app/RandomGenerationOperationApp.class
+utils/Crypto.class
+consensus/messages/PrePrepareMessage.class
+consensus/messages/CommitMessage.class
+consensus/messages/PrePrepareMessage$1.class
