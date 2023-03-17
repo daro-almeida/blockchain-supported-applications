@@ -16,12 +16,13 @@ if '__main__' == __name__:
             "docker", "run",
             f"--name=ogmrs_{i}",
             "--rm",
-            "-itd",
+            #"-itd",
             "--network=host",
-            "-v", f"{cwd}/csd2223-proj1.jar:/usr/local/csd2223-proj1.jar",
-            "-v", f"{cwd}/config.properties:/usr/local/config.properties",
-            "-v", f"{cwd}/log4j2.xml:/usr/local/log4j2.xml",
-            "-v", f"{cwd}/logs:/usr/local/logs/",
+            "-v", f"{cwd}/deploy/csd2223-proj1.jar:/usr/local/csd2223-proj1.jar",
+            "-v", f"{cwd}/deploy/config.properties:/usr/local/config.properties",
+            "-v", f"{cwd}/deploy/log4j2.xml:/usr/local/log4j2.xml",
+            "-v", f"{cwd}/deploy/crypto:/usr/local/crypto/",
+            "-v", f"{cwd}/deploy/logs:/usr/local/logs/",
             "-w", "/usr/local/",
             "openjdk:17",
 
@@ -32,8 +33,9 @@ if '__main__' == __name__:
             f"crypto_name=node{i}"]
 
         if i == 0:
-            cmd.append("bootstrap_leader=true")
-        subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd.append("bootstrap_primary=true")
+        subprocess.Popen(cmd)
+        #subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("Press Enter to terminate all replicas")
     input()
