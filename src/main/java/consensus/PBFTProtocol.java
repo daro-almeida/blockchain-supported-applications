@@ -1,6 +1,8 @@
 package consensus;
 
+import consensus.messages.CommitMessage;
 import consensus.messages.PrePrepareMessage;
+import consensus.messages.PrepareMessage;
 import consensus.requests.ProposeRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -38,17 +40,18 @@ public class PBFTProtocol extends GenericProtocol {
 	private KeyStore truststore;
 	private PrivateKey key;
 	
-	//TODO: add protocol state (related with the internal operation of the view)
 	private Host self;
 	private int viewN;
 	private final List<Host> view;
 	private int seq;
+	private boolean primary;
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
 
 		this.seq = 0;
 		this.viewN = 0;
+		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
 
 		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
@@ -71,7 +74,6 @@ public class PBFTProtocol extends GenericProtocol {
 			key = Crypto.getPrivateKey(cryptoName, props);
 		} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException | CertificateException
 				| IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 
@@ -80,9 +82,13 @@ public class PBFTProtocol extends GenericProtocol {
 		peerProps.setProperty(TCPChannel.PORT_KEY, props.getProperty(PORT_KEY));
 		int peerChannel = createChannel(TCPChannel.NAME, peerProps);
 
-		logger.info("Standing by to establish connections (10s)");
+		logger.info("Standing by to establish connections (2s)");
 
 		registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
+
+		registerMessageHandler(peerChannel, PrePrepareMessage.MESSAGE_ID, this::uponPrePrepareMessage);
+		registerMessageHandler(peerChannel, PrepareMessage.MESSAGE_ID, this::uponPrepareMessage);
+		registerMessageHandler(peerChannel, CommitMessage.MESSAGE_ID, this::uponCommitMessage);
 
 		registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
 		registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
@@ -90,18 +96,47 @@ public class PBFTProtocol extends GenericProtocol {
 		registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
 		registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
 
-		try { Thread.sleep(10 * 1000); } catch (InterruptedException ignored) { }
+		try { Thread.sleep(2 * 1000); } catch (InterruptedException ignored) { }
 		
 		view.forEach(this::openConnection);
 	}
 
-	/* --------------------------------------- Message Handlers ----------------------------------- */
+	/* --------------------------------------- Predicates ----------------------------------- */
+
+	// not sure yet if m should be byte[] or ProposeRequest
+	private boolean prepared(ProposeRequest m, int v, int n) {
+		// TODO: Implement
+		return false;
+	}
+	private boolean committed(ProposeRequest m, int v, int n) {
+		// TODO: Implement
+		return false;
+	}
+
+	private boolean committedLocal(ProposeRequest m, int v, int n) {
+		// TODO: Implement
+		return false;
+	}
 
 	/* --------------------------------------- Request Handlers ----------------------------------- */
 
 	private void uponProposeRequest(ProposeRequest req, short sourceProto) {
 		logger.info("Received request: " + req);
 		view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
+	}
+
+	/* --------------------------------------- Message Handlers ----------------------------------- */
+
+	private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
+		// TODO: Implement
+	}
+
+	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
+		// TODO: Implement
+	}
+
+	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
+		// TODO: Implement
 	}
 
 	/* --------------------------------------- Notification Handlers ----------------------------------- */
@@ -135,7 +170,8 @@ public class PBFTProtocol extends GenericProtocol {
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     public void submitOperation(byte[] b, byte[] sig) {
-    	sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
+		if (primary)
+    		sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
     }
 	
 }

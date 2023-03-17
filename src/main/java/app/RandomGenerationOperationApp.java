@@ -68,9 +68,9 @@ public class RandomGenerationOperationApp {
         String cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
         key = Crypto.getPrivateKey(cryptoName, props);
         
-        logger.info("Waiting 10s to start issuing requests.");
+        logger.info("Waiting 2s to start issuing requests.");
         
-        try { Thread.sleep(10 * 1000); } catch (InterruptedException e1) { }
+        try { Thread.sleep(2 * 1000); } catch (InterruptedException e1) { }
         
         Thread t = new Thread(new Runnable() {
 			
@@ -88,13 +88,10 @@ public class RandomGenerationOperationApp {
 					} catch (InterruptedException e) {
 						//nothing to be done here
 					} catch (InvalidKeyException e) {
-						// TODO Auto-generated catch block
 						e.printStackTrace();
 					} catch (NoSuchAlgorithmException e) {
-						// TODO Auto-generated catch block
 						e.printStackTrace();
 					} catch (SignatureException e) {
-						// TODO Auto-generated catch block
 						e.printStackTrace();
 					} //Wait 5 seconds
 		        }
