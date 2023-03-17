@@ -32,7 +32,7 @@ if '__main__' == __name__:
             f"base_port={base_port + i}",
             f"crypto_name=node{i}"]
 
-        if i == 0:
+        if i == 1:
             cmd.append("bootstrap_primary=true")
         subprocess.Popen(cmd)
         #subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

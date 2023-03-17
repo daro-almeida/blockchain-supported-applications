@@ -20,9 +20,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.security.*;
 import java.security.cert.CertificateException;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
 
 public class PBFTProtocol extends GenericProtocol {
@@ -44,7 +42,10 @@ public class PBFTProtocol extends GenericProtocol {
 	private int viewN;
 	private final List<Host> view;
 	private int seq;
+	private final int f;
 	private boolean primary;
+
+	private Set<CommitMessage> commits;
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
@@ -52,6 +53,8 @@ public class PBFTProtocol extends GenericProtocol {
 		this.seq = 0;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
+
+		commits = new HashSet<>();
 
 		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
@@ -62,6 +65,8 @@ public class PBFTProtocol extends GenericProtocol {
 			String[] tokens = s.split(":");
 			view.add(new Host(InetAddress.getByName(tokens[0]), Integer.parseInt(tokens[1])));
 		}
+
+		this.f = (view.size() - 1) / 3;
 	}
 
 
@@ -82,7 +87,7 @@ public class PBFTProtocol extends GenericProtocol {
 		peerProps.setProperty(TCPChannel.PORT_KEY, props.getProperty(PORT_KEY));
 		int peerChannel = createChannel(TCPChannel.NAME, peerProps);
 
-		logger.info("Standing by to establish connections (2s)");
+		logger.info("Standing by to establish connections (5s)");
 
 		registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
 
@@ -90,13 +95,17 @@ public class PBFTProtocol extends GenericProtocol {
 		registerMessageHandler(peerChannel, PrepareMessage.MESSAGE_ID, this::uponPrepareMessage);
 		registerMessageHandler(peerChannel, CommitMessage.MESSAGE_ID, this::uponCommitMessage);
 
+		registerMessageSerializer(peerChannel, PrePrepareMessage.MESSAGE_ID, PrePrepareMessage.serializer);
+		registerMessageSerializer(peerChannel, PrepareMessage.MESSAGE_ID, PrepareMessage.serializer);
+		registerMessageSerializer(peerChannel, CommitMessage.MESSAGE_ID, CommitMessage.serializer);
+
 		registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
 		registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
 		registerChannelEventHandler(peerChannel, OutConnectionDown.EVENT_ID, this::uponOutConnectionDown);
 		registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
 		registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
 
-		try { Thread.sleep(2 * 1000); } catch (InterruptedException ignored) { }
+		try { Thread.sleep(5 * 1000); } catch (InterruptedException ignored) { }
 		
 		view.forEach(this::openConnection);
 	}
@@ -128,15 +137,19 @@ public class PBFTProtocol extends GenericProtocol {
 	/* --------------------------------------- Message Handlers ----------------------------------- */
 
 	private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-		// TODO: Implement
+		//TODO: Implement
 	}
 
 	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-		// TODO: Implement
+		//TODO: Implement
+
+		// if prepared(m, v, n) then send commit to all replicas
+
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-		// TODO: Implement
+		if (msg.getViewN() == viewN) //TODO also need to check h < seq < H  and signature
+			commits.add(msg);
 	}
 
 	/* --------------------------------------- Notification Handlers ----------------------------------- */
