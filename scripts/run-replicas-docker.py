@@ -22,7 +22,7 @@ if '__main__' == __name__:
             "-v", f"{cwd}/deploy/config.properties:/usr/local/config.properties",
             "-v", f"{cwd}/deploy/log4j2.xml:/usr/local/log4j2.xml",
             "-v", f"{cwd}/deploy/crypto:/usr/local/crypto/",
-            "-v", f"{cwd}/deploy/logs:/usr/local/logs/",
+            "-v", f"{cwd}/logs:/usr/local/logs/",
             "-w", "/usr/local/",
             "openjdk:17",
 
