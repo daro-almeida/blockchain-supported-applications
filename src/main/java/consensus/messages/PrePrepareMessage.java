@@ -14,7 +14,7 @@ public class PrePrepareMessage extends SignedProtoMessage {
 		super(PrePrepareMessage.MESSAGE_ID);
 	}
 
-	public static SignedMessageSerializer<PrePrepareMessage> serializer = new SignedMessageSerializer<PrePrepareMessage>() {
+	public static final SignedMessageSerializer<PrePrepareMessage> serializer = new SignedMessageSerializer<PrePrepareMessage>() {
 
 		@Override
 		public void serializeBody(PrePrepareMessage signedProtoMessage, ByteBuf out) throws IOException {
