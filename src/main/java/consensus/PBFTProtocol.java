@@ -60,9 +60,7 @@ public class PBFTProtocol extends GenericProtocol {
 		String[] membership = props.getProperty(INITIAL_MEMBERSHIP_KEY).split(",");
 		for (String s : membership) {
 			String[] tokens = s.split(":");
-			var host = new Host(InetAddress.getByName(tokens[0]), Integer.parseInt(tokens[1]));
-			if (!host.equals(self))
-				view.add(host);
+			view.add(new Host(InetAddress.getByName(tokens[0]), Integer.parseInt(tokens[1])));
 		}
 	}
 
