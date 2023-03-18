@@ -3,6 +3,7 @@ package consensus;
 import consensus.messages.CommitMessage;
 import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
+import consensus.notifications.CommittedNotification;
 import consensus.requests.ProposeRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -38,23 +39,27 @@ public class PBFTProtocol extends GenericProtocol {
 	private KeyStore truststore;
 	private PrivateKey key;
 	
-	private Host self;
+	private final Host self;
 	private int viewN;
 	private final List<Host> view;
 	private int seq;
+	private int lastExecuted;
 	private final int f;
 	private boolean primary;
 
-	private Set<CommitMessage> commits;
+	private final Map<Integer, Set<CommitMessage>> commitsPerSeq;
+	private final Map<Integer, ProposeRequest> requestPerSeq;
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
 
 		this.seq = 0;
+		this.lastExecuted = -1;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
 
-		commits = new HashSet<>();
+		commitsPerSeq = new HashMap<>();
+		requestPerSeq = new HashMap<>();
 
 		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
@@ -112,19 +117,22 @@ public class PBFTProtocol extends GenericProtocol {
 
 	/* --------------------------------------- Predicates ----------------------------------- */
 
-	// not sure yet if m should be byte[] or ProposeRequest
+	/*
+	 * We define the predicate prepared(m,v,n,i) to be true if and only if replica i has inserted in its log:
+	 * the request m, a pre-prepare for m in view v with sequence number n, and 2f prepares from different backups
+	 * that match the pre-prepare.
+	 */
 	private boolean prepared(ProposeRequest m, int v, int n) {
 		// TODO: Implement
 		return false;
 	}
 	private boolean committed(ProposeRequest m, int v, int n) {
-		// TODO: Implement
-		return false;
+		// if committed-local(m, v, n, i) is true for some non-faulty i then committed(m, v, n) is true
+		return committedLocal(m, v, n);
 	}
 
 	private boolean committedLocal(ProposeRequest m, int v, int n) {
-		// TODO: Implement
-		return false;
+		return prepared(m, v, n) && commitsPerSeq.get(n).size() >= 2 * f + 1;
 	}
 
 	/* --------------------------------------- Request Handlers ----------------------------------- */
@@ -144,12 +152,19 @@ public class PBFTProtocol extends GenericProtocol {
 		//TODO: Implement
 
 		// if prepared(m, v, n) then send commit to all replicas
-
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
 		if (msg.getViewN() == viewN) //TODO also need to check h < seq < H  and signature
-			commits.add(msg);
+			commitsPerSeq.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
+
+		assert msg.getSeq() <= lastExecuted;
+		var request = requestPerSeq.get(lastExecuted + 1);
+		while (request != null && committedLocal(request, viewN, lastExecuted + 1)) {
+			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+			lastExecuted++;
+			request = requestPerSeq.get(lastExecuted);
+		}
 	}
 
 	/* --------------------------------------- Notification Handlers ----------------------------------- */
