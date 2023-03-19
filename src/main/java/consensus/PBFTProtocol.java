@@ -10,6 +10,8 @@ import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
+import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
@@ -36,29 +38,34 @@ public class PBFTProtocol extends GenericProtocol {
 	private static final Logger logger = LogManager.getLogger(PBFTProtocol.class);
 	
 	private String cryptoName;
-	private KeyStore truststore;
 	private PrivateKey key;
-	
+	// cryptoName -> public key
+	private final Map<String, PublicKey> publicKeys;
+
 	private final Host self;
 	private int viewN;
 	private final List<Host> view;
 	private int seq;
 	private int lastExecuted;
-	private final int f;
+	private int lowH, highH;
 	private boolean primary;
+	private final int f;
 
-	private final Map<Integer, Set<CommitMessage>> commitsPerSeq;
+	// seq -> commit set
+	private final Map<Integer, Set<CommitMessage>> commitsLog;
 	private final Map<Integer, ProposeRequest> requestPerSeq;
+
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
+
+		this.publicKeys = new HashMap<>();
 
 		this.seq = 0;
 		this.lastExecuted = -1;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
-
-		commitsPerSeq = new HashMap<>();
+		commitsLog = new HashMap<>();
 		requestPerSeq = new HashMap<>();
 
 		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
@@ -80,11 +87,16 @@ public class PBFTProtocol extends GenericProtocol {
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
 		try {
 			cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
-			truststore = Crypto.getTruststore(props);
+			KeyStore truststore = Crypto.getTruststore(props);
 			key = Crypto.getPrivateKey(cryptoName, props);
+			for (var it = truststore.aliases().asIterator(); it.hasNext(); ) {
+				var name = it.next();
+				publicKeys.put(name, truststore.getCertificate(name).getPublicKey());
+			}
+
 		} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException | CertificateException
 				| IOException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 
 		Properties peerProps = new Properties();
@@ -132,7 +144,7 @@ public class PBFTProtocol extends GenericProtocol {
 	}
 
 	private boolean committedLocal(ProposeRequest m, int v, int n) {
-		return prepared(m, v, n) && commitsPerSeq.get(n).size() >= 2 * f + 1;
+		return prepared(m, v, n) && commitsLog.get(n).size() >= 2 * f + 1;
 	}
 
 	/* --------------------------------------- Request Handlers ----------------------------------- */
@@ -151,14 +163,21 @@ public class PBFTProtocol extends GenericProtocol {
 	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
 		//TODO: Implement
 
-		// if prepared(m, v, n) then send commit to all replicas
+		// if prepared(m, v, n) then send signed commit to all replicas
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-		if (msg.getViewN() == viewN) //TODO also need to check h < seq < H  and signature
-			commitsPerSeq.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
-
 		assert msg.getSeq() <= lastExecuted;
+
+		try {
+			if (msg.getViewN() == viewN && msg.checkSignature(publicKeys.get(msg.getCryptoName())) && seq > lowH && seq < highH)
+				commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
+		} catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException |
+				 InvalidKeyException e) {
+			e.printStackTrace();
+			return;
+		}
+
 		var request = requestPerSeq.get(lastExecuted + 1);
 		while (request != null && committedLocal(request, viewN, lastExecuted + 1)) {
 			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));

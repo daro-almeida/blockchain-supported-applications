@@ -3,21 +3,28 @@ package consensus.messages;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
-import pt.unl.fct.di.novasys.network.data.Host;
+import utils.Utils;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Objects;
 
 public class CommitMessage extends SignedProtoMessage {
 
     public final static short MESSAGE_ID = 103;
 
-    private int viewN, seq;
-    private byte[] digest;
-    private Host sender;
+    private final int viewN, seq;
+    private final byte[] digest;
+    private final String cryptoName;
 
 
-    public CommitMessage() {
+    public CommitMessage(int viewN, int seq, byte[] digest, String cryptoName) {
         super(CommitMessage.MESSAGE_ID);
+
+        this.viewN = viewN;
+        this.seq = seq;
+        this.digest = digest;
+        this.cryptoName = cryptoName;
     }
 
     public int getViewN() {
@@ -32,8 +39,8 @@ public class CommitMessage extends SignedProtoMessage {
         return digest;
     }
 
-    public Host getSender() {
-        return sender;
+    public String getCryptoName() {
+    	return cryptoName;
     }
 
     public static final SignedMessageSerializer<CommitMessage> serializer = new SignedMessageSerializer<>() {
@@ -44,18 +51,18 @@ public class CommitMessage extends SignedProtoMessage {
             out.writeInt(signedProtoMessage.seq);
             out.writeInt(signedProtoMessage.digest.length);
             out.writeBytes(signedProtoMessage.digest);
-            Host.serializer.serialize(signedProtoMessage.sender, out);
+            Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
         }
 
         @Override
         public CommitMessage deserializeBody(ByteBuf in) throws IOException {
-            CommitMessage msg = new CommitMessage();
-            msg.viewN = in.readInt();
-            msg.seq = in.readInt();
-            msg.digest = new byte[in.readInt()];
-            in.readBytes(msg.digest);
-            msg.sender = Host.serializer.deserialize(in);
-            return msg;
+            int viewN = in.readInt();
+            int seq = in.readInt();
+            int digestLength = in.readInt();
+            byte[] digest = new byte[digestLength];
+            in.readBytes(digest);
+            String cryptoName = Utils.stringSerializer.deserialize(in);
+            return new CommitMessage(viewN, seq, digest, cryptoName);
         }
     };
 
