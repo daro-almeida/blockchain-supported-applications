@@ -42,17 +42,22 @@ public class PBFTProtocol extends GenericProtocol {
 	// cryptoName -> public key
 	private final Map<String, PublicKey> publicKeys;
 
-	private final Host self;
 	private int viewN;
-	private final List<Host> view;
 	private int seq;
-	private int lastExecuted;
-	private int lowH, highH;
+	private int nextToExecute;
+
+	private final Host self;
+	private final List<Host> view;
 	private boolean primary;
 	private final int f;
 
+	private final List<Checkpoint> unstableCheckpoints;
+	private Checkpoint stableCheckpoint;
+	private int lowH, highH;
+
 	// seq -> commit set
-	private final Map<Integer, Set<CommitMessage>> commitsLog;
+	private final Map<Integer, Set<CommitMessage>> commitsLog; //TODO might only need to store the number of commits
+	// seq -> request
 	private final Map<Integer, ProposeRequest> requestPerSeq;
 
 	
@@ -62,16 +67,21 @@ public class PBFTProtocol extends GenericProtocol {
 		this.publicKeys = new HashMap<>();
 
 		this.seq = 0;
-		this.lastExecuted = -1;
+		this.nextToExecute = 0;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
-		commitsLog = new HashMap<>();
-		requestPerSeq = new HashMap<>();
+		this.commitsLog = new HashMap<>();
+		this.requestPerSeq = new HashMap<>();
+		this.unstableCheckpoints = new LinkedList<>();
 
-		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
+		// TODO change when checkpointing is implemented
+		this.lowH = -1;
+		this.highH = Integer.MAX_VALUE;
+
+		this.self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
-		
-		view = new LinkedList<>();
+
+		this.view = new LinkedList<>();
 		String[] membership = props.getProperty(INITIAL_MEMBERSHIP_KEY).split(",");
 		for (String s : membership) {
 			String[] tokens = s.split(":");
@@ -127,6 +137,17 @@ public class PBFTProtocol extends GenericProtocol {
 		view.forEach(this::openConnection);
 	}
 
+	/* --------------------------------------- Auxiliary Functions ----------------------------------- */
+
+	private void commitRequests() {
+		var request = requestPerSeq.get(nextToExecute);
+		while (request != null && committed(request, viewN, nextToExecute)) {
+			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+			nextToExecute++;
+			request = requestPerSeq.get(nextToExecute);
+		}
+	}
+
 	/* --------------------------------------- Predicates ----------------------------------- */
 
 	/*
@@ -138,12 +159,8 @@ public class PBFTProtocol extends GenericProtocol {
 		// TODO: Implement
 		return false;
 	}
-	private boolean committed(ProposeRequest m, int v, int n) {
-		// if committed-local(m, v, n, i) is true for some non-faulty i then committed(m, v, n) is true
-		return committedLocal(m, v, n);
-	}
 
-	private boolean committedLocal(ProposeRequest m, int v, int n) {
+	private boolean committed(ProposeRequest m, int v, int n) {
 		return prepared(m, v, n) && commitsLog.get(n).size() >= 2 * f + 1;
 	}
 
@@ -167,7 +184,7 @@ public class PBFTProtocol extends GenericProtocol {
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-		assert msg.getSeq() <= lastExecuted;
+		assert msg.getSeq() < nextToExecute;
 
 		try {
 			if (msg.getViewN() == viewN && msg.checkSignature(publicKeys.get(msg.getCryptoName())) && seq > lowH && seq < highH)
@@ -178,12 +195,7 @@ public class PBFTProtocol extends GenericProtocol {
 			return;
 		}
 
-		var request = requestPerSeq.get(lastExecuted + 1);
-		while (request != null && committedLocal(request, viewN, lastExecuted + 1)) {
-			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
-			lastExecuted++;
-			request = requestPerSeq.get(lastExecuted);
-		}
+		commitRequests();
 	}
 
 	/* --------------------------------------- Notification Handlers ----------------------------------- */
