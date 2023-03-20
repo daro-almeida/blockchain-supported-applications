@@ -174,7 +174,7 @@ public class PBFTProtocol extends GenericProtocol {
 				commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
 		} catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException |
 				 InvalidKeyException e) {
-			e.printStackTrace();
+			logger.warn(e.getMessage());
 			return;
 		}
 
