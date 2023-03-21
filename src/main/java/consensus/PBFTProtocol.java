@@ -55,6 +55,10 @@ public class PBFTProtocol extends GenericProtocol {
 	private Checkpoint stableCheckpoint;
 	private int lowH, highH;
 
+	private final Map<Integer, PrePrepareMessage> prePreparesLog;
+
+	private final Map<Integer, Set<PrepareMessage>> preparesLog;
+	
 	// seq -> commit set
 	private final Map<Integer, Set<CommitMessage>> commitsLog; //TODO might only need to store the number of commits
 	// seq -> request
@@ -70,6 +74,8 @@ public class PBFTProtocol extends GenericProtocol {
 		this.nextToExecute = 0;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
+		this.prePreparesLog = new HashMap<>();
+		this.preparesLog = new HashMap<>();
 		this.commitsLog = new HashMap<>();
 		this.requestPerSeq = new HashMap<>();
 		this.unstableCheckpoints = new LinkedList<>();
@@ -156,8 +162,18 @@ public class PBFTProtocol extends GenericProtocol {
 	 * that match the pre-prepare.
 	 */
 	private boolean prepared(ProposeRequest m, int v, int n) {
-		// TODO: Implement
-		return false;
+		//começar por fazer as verificações todas 
+		prePreparesLog.get(n).getViewN(); //view do pre-prepare
+		prePreparesLog.get(n).getDigest(); //digest do pre-prepare
+		prePreparesLog.size();
+		
+		if(preparesLog.get(n).size() < 2 * f){
+			return false;
+		} 
+		//else if (){ // já passou no tamanho, verificar que os fields do prepare q lá está são iguais aos do parâmetro
+
+
+		return true;
 	}
 
 	private boolean committed(ProposeRequest m, int v, int n) {
