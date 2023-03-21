@@ -3,12 +3,15 @@ package consensus;
 import consensus.messages.CommitMessage;
 import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
+import consensus.notifications.CommittedNotification;
 import consensus.requests.ProposeRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
+import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
@@ -35,31 +38,50 @@ public class PBFTProtocol extends GenericProtocol {
 	private static final Logger logger = LogManager.getLogger(PBFTProtocol.class);
 	
 	private String cryptoName;
-	private KeyStore truststore;
 	private PrivateKey key;
-	
-	private Host self;
-	private int viewN;
-	private final List<Host> view;
-	private int seq;
-	private final int f;
-	private boolean primary;
+	// cryptoName -> public key
+	private final Map<String, PublicKey> publicKeys;
 
-	private Set<CommitMessage> commits;
+	private int viewN;
+	private int seq;
+	private int nextToExecute;
+
+	private final Host self;
+	private final List<Host> view;
+	private boolean primary;
+	private final int f;
+
+	private final List<Checkpoint> unstableCheckpoints;
+	private Checkpoint stableCheckpoint;
+	private int lowH, highH;
+
+	// seq -> commit set
+	private final Map<Integer, Set<CommitMessage>> commitsLog; //TODO might only need to store the number of commits
+	// seq -> request
+	private final Map<Integer, ProposeRequest> requestPerSeq;
+
 	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
 
+		this.publicKeys = new HashMap<>();
+
 		this.seq = 0;
+		this.nextToExecute = 0;
 		this.viewN = 0;
 		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
+		this.commitsLog = new HashMap<>();
+		this.requestPerSeq = new HashMap<>();
+		this.unstableCheckpoints = new LinkedList<>();
 
-		commits = new HashSet<>();
+		// TODO change when checkpointing is implemented
+		this.lowH = -1;
+		this.highH = Integer.MAX_VALUE;
 
-		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
+		this.self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
 				Integer.parseInt(props.getProperty(PORT_KEY)));
-		
-		view = new LinkedList<>();
+
+		this.view = new LinkedList<>();
 		String[] membership = props.getProperty(INITIAL_MEMBERSHIP_KEY).split(",");
 		for (String s : membership) {
 			String[] tokens = s.split(":");
@@ -75,11 +97,16 @@ public class PBFTProtocol extends GenericProtocol {
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
 		try {
 			cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
-			truststore = Crypto.getTruststore(props);
+			KeyStore truststore = Crypto.getTruststore(props);
 			key = Crypto.getPrivateKey(cryptoName, props);
+			for (var it = truststore.aliases().asIterator(); it.hasNext(); ) {
+				var name = it.next();
+				publicKeys.put(name, truststore.getCertificate(name).getPublicKey());
+			}
+
 		} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException | CertificateException
 				| IOException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 
 		Properties peerProps = new Properties();
@@ -110,21 +137,31 @@ public class PBFTProtocol extends GenericProtocol {
 		view.forEach(this::openConnection);
 	}
 
+	/* --------------------------------------- Auxiliary Functions ----------------------------------- */
+
+	private void commitRequests() {
+		var request = requestPerSeq.get(nextToExecute);
+		while (request != null && committed(request, viewN, nextToExecute)) {
+			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+			nextToExecute++;
+			request = requestPerSeq.get(nextToExecute);
+		}
+	}
+
 	/* --------------------------------------- Predicates ----------------------------------- */
 
-	// not sure yet if m should be byte[] or ProposeRequest
+	/*
+	 * We define the predicate prepared(m,v,n,i) to be true if and only if replica i has inserted in its log:
+	 * the request m, a pre-prepare for m in view v with sequence number n, and 2f prepares from different backups
+	 * that match the pre-prepare.
+	 */
 	private boolean prepared(ProposeRequest m, int v, int n) {
 		// TODO: Implement
 		return false;
 	}
-	private boolean committed(ProposeRequest m, int v, int n) {
-		// TODO: Implement
-		return false;
-	}
 
-	private boolean committedLocal(ProposeRequest m, int v, int n) {
-		// TODO: Implement
-		return false;
+	private boolean committed(ProposeRequest m, int v, int n) {
+		return prepared(m, v, n) && commitsLog.get(n).size() >= 2 * f + 1;
 	}
 
 	/* --------------------------------------- Request Handlers ----------------------------------- */
@@ -143,13 +180,22 @@ public class PBFTProtocol extends GenericProtocol {
 	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
 		//TODO: Implement
 
-		// if prepared(m, v, n) then send commit to all replicas
-
+		// if prepared(m, v, n) then send signed commit to all replicas
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-		if (msg.getViewN() == viewN) //TODO also need to check h < seq < H  and signature
-			commits.add(msg);
+		assert msg.getSeq() < nextToExecute;
+
+		try {
+			if (msg.getViewN() == viewN && msg.checkSignature(publicKeys.get(msg.getCryptoName())) && seq > lowH && seq < highH)
+				commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
+		} catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException |
+				 InvalidKeyException e) {
+			logger.warn(e.getMessage());
+			return;
+		}
+
+		commitRequests();
 	}
 
 	/* --------------------------------------- Notification Handlers ----------------------------------- */
