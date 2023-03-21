@@ -33,7 +33,7 @@ if '__main__' == __name__:
             f"crypto_name=node{i}"]
 
         if i == 1:
-            cmd.append("bootstrap_primary=true")
+            cmd.append(f"bootstrap_primary=node{i}")
         subprocess.Popen(cmd)
         #subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

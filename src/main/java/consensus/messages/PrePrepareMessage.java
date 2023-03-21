@@ -1,22 +1,36 @@
 package consensus.messages;
 
-import java.io.IOException;
+import java.io.*;
+import java.security.*;
 
+import consensus.requests.ProposeRequest;
 import io.netty.buffer.ByteBuf;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
-import pt.unl.fct.di.novasys.network.data.Host;
+import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
+import pt.unl.fct.di.novasys.network.ISerializer;
+import utils.SignaturesHelper;
 
-public class PrePrepareMessage extends SignedProtoMessage {
+public class PrePrepareMessage extends ProtoMessage {
 
 	public final static short MESSAGE_ID = 101;
 
-	private int viewN, seq;
-	private byte[] digest;
-	private Host sender;
+	private final int viewN, seq;
+	private final byte[] digest;
+	private final ProposeRequest request;
+	private byte[] signature;
 
-	public PrePrepareMessage() {
+	public PrePrepareMessage(int viewN, int seq, byte[] digest, ProposeRequest request) {
 		super(PrePrepareMessage.MESSAGE_ID);
+
+		this.viewN = viewN;
+		this.seq = seq;
+		this.digest = digest;
+		this.request = request;
+	}
+
+	private PrePrepareMessage(int viewN, int seq, byte[] digest, ProposeRequest request, byte[] signature) {
+		this(viewN, seq, digest, request);
+
+		this.signature = signature;
 	}
 
 	public int getViewN() {
@@ -31,36 +45,67 @@ public class PrePrepareMessage extends SignedProtoMessage {
 		return digest;
 	}
 
-	public Host getSender() {
-		return sender;
+	public ProposeRequest getRequest() {
+		return request;
 	}
 
-	public static final SignedMessageSerializer<PrePrepareMessage> serializer = new SignedMessageSerializer<PrePrepareMessage>() {
+	public void signMessage(PrivateKey key) throws NoSuchAlgorithmException, SignatureException, InvalidKeyException {
+		var content = getSignatureContentBytes();
+
+		signature = SignaturesHelper.generateSignature(content, key);
+	}
+
+	public boolean verifySignature(PublicKey key) throws SignatureException, NoSuchAlgorithmException, InvalidKeyException {
+		var content = getSignatureContentBytes();
+
+		return SignaturesHelper.checkSignature(content, signature, key);
+	}
+
+	private byte[] getSignatureContentBytes() {
+		var byteArrayOutputStream = new ByteArrayOutputStream();
+		var outputStream = new DataOutputStream(byteArrayOutputStream);
+
+		try {
+			outputStream.writeInt(viewN);
+			outputStream.writeInt(seq);
+			byteArrayOutputStream.write(digest);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+		return byteArrayOutputStream.toByteArray();
+	}
+
+	public static final ISerializer<PrePrepareMessage> serializer = new ISerializer<>() {
 
 		@Override
-		public void serializeBody(PrePrepareMessage signedProtoMessage, ByteBuf out) throws IOException {
-			out.writeInt(signedProtoMessage.viewN);
-			out.writeInt(signedProtoMessage.seq);
-			out.writeInt(signedProtoMessage.digest.length);
-			out.writeBytes(signedProtoMessage.digest); 
-			Host.serializer.serialize(signedProtoMessage.sender, out);
+		public void serialize(PrePrepareMessage prePrepareMessage, ByteBuf byteBuf) throws IOException {
+			byteBuf.writeInt(prePrepareMessage.viewN);
+			byteBuf.writeInt(prePrepareMessage.seq);
+			byteBuf.writeInt(prePrepareMessage.digest.length);
+			byteBuf.writeBytes(prePrepareMessage.digest);
+			ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
+
+			if (prePrepareMessage.signature != null) {
+				byteBuf.writeInt(prePrepareMessage.signature.length);
+				byteBuf.writeBytes(prePrepareMessage.signature);
+			} else {
+				throw new RuntimeException("PrePrepareMessage signature is null");
+			}
 		}
 
 		@Override
-		public PrePrepareMessage deserializeBody(ByteBuf in) throws IOException {
-			PrePrepareMessage msg = new PrePrepareMessage();
-            msg.viewN = in.readInt();
-            msg.seq = in.readInt();
-            msg.digest = new byte[in.readInt()];
-            in.readBytes(msg.digest);
-            msg.sender = Host.serializer.deserialize(in);
-            return msg;
+		public PrePrepareMessage deserialize(ByteBuf byteBuf) throws IOException {
+			int viewN = byteBuf.readInt();
+			int seq = byteBuf.readInt();
+			byte[] digest = new byte[byteBuf.readInt()];
+			byteBuf.readBytes(digest);
+			ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
+
+			byte[] signature = new byte[byteBuf.readInt()];
+			byteBuf.readBytes(signature);
+
+			return new PrePrepareMessage(viewN, seq, digest, request, signature);
 		}
 	};
-
-	@Override
-	public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-		return PrePrepareMessage.serializer;
-	}
-
 }

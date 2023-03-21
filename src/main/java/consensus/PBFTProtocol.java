@@ -48,7 +48,7 @@ public class PBFTProtocol extends GenericProtocol {
 
 	private final Host self;
 	private final List<Host> view;
-	private boolean primary;
+	private String primaryCryptoName;
 	private final int f;
 
 	private final List<Checkpoint> unstableCheckpoints;
@@ -60,7 +60,7 @@ public class PBFTProtocol extends GenericProtocol {
 	private final Map<Integer, Set<PrepareMessage>> preparesLog;
 	
 	// seq -> commit set
-	private final Map<Integer, Set<CommitMessage>> commitsLog; //TODO might only need to store the number of commits
+	private final Map<Integer, Set<CommitMessage>> commitsLog;
 	// seq -> request
 	private final Map<Integer, ProposeRequest> requestPerSeq;
 
@@ -73,7 +73,7 @@ public class PBFTProtocol extends GenericProtocol {
 		this.seq = 0;
 		this.nextToExecute = 0;
 		this.viewN = 0;
-		this.primary = Boolean.parseBoolean(props.getProperty("bootstrap_primary","false"));
+		this.primaryCryptoName = props.getProperty("bootstrap_primary");
 		this.prePreparesLog = new HashMap<>();
 		this.preparesLog = new HashMap<>();
 		this.commitsLog = new HashMap<>();
@@ -184,7 +184,7 @@ public class PBFTProtocol extends GenericProtocol {
 
 	private void uponProposeRequest(ProposeRequest req, short sourceProto) {
 		logger.info("Received request: " + req);
-		view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
+		//view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
 	}
 
 	/* --------------------------------------- Message Handlers ----------------------------------- */
@@ -245,7 +245,7 @@ public class PBFTProtocol extends GenericProtocol {
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     public void submitOperation(byte[] b, byte[] sig) {
-		if (primary)
+		if (primaryCryptoName.equals(cryptoName))
     		sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
     }
 	
