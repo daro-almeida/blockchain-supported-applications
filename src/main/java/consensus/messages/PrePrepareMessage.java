@@ -56,7 +56,7 @@ public class PrePrepareMessage extends ProtoMessage {
 		signature = SignaturesHelper.generateSignature(content, key);
 	}
 
-	public boolean verifySignature(PublicKey key) throws SignatureException, NoSuchAlgorithmException, InvalidKeyException {
+	public boolean checkSignature(PublicKey key) throws SignatureException, NoSuchAlgorithmException, InvalidKeyException {
 		var content = getSignatureContentBytes();
 
 		return SignaturesHelper.checkSignature(content, signature, key);

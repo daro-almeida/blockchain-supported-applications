@@ -1,42 +1,61 @@
 package consensus;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.security.InvalidKeyException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.SignatureException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import consensus.messages.CommitMessage;
 import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
 import consensus.notifications.CommittedNotification;
 import consensus.requests.ProposeRequest;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
-import pt.unl.fct.di.novasys.channel.tcp.events.*;
+import pt.unl.fct.di.novasys.channel.tcp.events.InConnectionDown;
+import pt.unl.fct.di.novasys.channel.tcp.events.InConnectionUp;
+import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionDown;
+import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionFailed;
+import pt.unl.fct.di.novasys.channel.tcp.events.OutConnectionUp;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
-
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.security.*;
-import java.security.cert.CertificateException;
-import java.util.*;
-
 
 public class PBFTProtocol extends GenericProtocol {
 
 	public static final String PROTO_NAME = "pbft";
 	public static final short PROTO_ID = 100;
-	
+
 	public static final String ADDRESS_KEY = "address";
 	public static final String PORT_KEY = "base_port";
 	public static final String INITIAL_MEMBERSHIP_KEY = "initial_membership";
 
 	private static final Logger logger = LogManager.getLogger(PBFTProtocol.class);
-	
+
 	private String cryptoName;
 	private PrivateKey key;
 	// cryptoName -> public key
@@ -58,13 +77,10 @@ public class PBFTProtocol extends GenericProtocol {
 	private final Map<Integer, PrePrepareMessage> prePreparesLog;
 
 	private final Map<Integer, Set<PrepareMessage>> preparesLog;
-	
+
 	// seq -> commit set
 	private final Map<Integer, Set<CommitMessage>> commitsLog;
-	// seq -> request
-	private final Map<Integer, ProposeRequest> requestPerSeq;
 
-	
 	public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
 
@@ -77,7 +93,6 @@ public class PBFTProtocol extends GenericProtocol {
 		this.prePreparesLog = new HashMap<>();
 		this.preparesLog = new HashMap<>();
 		this.commitsLog = new HashMap<>();
-		this.requestPerSeq = new HashMap<>();
 		this.unstableCheckpoints = new LinkedList<>();
 
 		// TODO change when checkpointing is implemented
@@ -97,15 +112,13 @@ public class PBFTProtocol extends GenericProtocol {
 		this.f = (view.size() - 1) / 3;
 	}
 
-
-
 	@Override
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
 		try {
 			cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
 			KeyStore truststore = Crypto.getTruststore(props);
 			key = Crypto.getPrivateKey(cryptoName, props);
-			for (var it = truststore.aliases().asIterator(); it.hasNext(); ) {
+			for (var it = truststore.aliases().asIterator(); it.hasNext();) {
 				var name = it.next();
 				publicKeys.put(name, truststore.getCertificate(name).getPublicKey());
 			}
@@ -138,40 +151,51 @@ public class PBFTProtocol extends GenericProtocol {
 		registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
 		registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
 
-		try { Thread.sleep(5 * 1000); } catch (InterruptedException ignored) { }
-		
+		try {
+			Thread.sleep(5 * 1000);
+		} catch (InterruptedException ignored) {
+		}
+
 		view.forEach(this::openConnection);
 	}
 
-	/* --------------------------------------- Auxiliary Functions ----------------------------------- */
+	/*
+	 * --------------------------------------- Auxiliary Functions
+	 * -----------------------------------
+	 */
 
 	private void commitRequests() {
-		var request = requestPerSeq.get(nextToExecute);
+		var request = prePreparesLog.get(nextToExecute).getRequest();
 		while (request != null && committed(request, viewN, nextToExecute)) {
 			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
 			nextToExecute++;
-			request = requestPerSeq.get(nextToExecute);
+			request = prePreparesLog.get(nextToExecute).getRequest();
 		}
 	}
 
-	/* --------------------------------------- Predicates ----------------------------------- */
+	/*
+	 * --------------------------------------- Predicates
+	 * -----------------------------------
+	 */
 
 	/*
-	 * We define the predicate prepared(m,v,n,i) to be true if and only if replica i has inserted in its log:
-	 * the request m, a pre-prepare for m in view v with sequence number n, and 2f prepares from different backups
+	 * We define the predicate prepared(m,v,n,i) to be true if and only if replica i
+	 * has inserted in its log:
+	 * the request m, a pre-prepare for m in view v with sequence number n, and 2f
+	 * prepares from different backups
 	 * that match the pre-prepare.
 	 */
 	private boolean prepared(ProposeRequest m, int v, int n) {
-		//começar por fazer as verificações todas 
-		prePreparesLog.get(n).getViewN(); //view do pre-prepare
-		prePreparesLog.get(n).getDigest(); //digest do pre-prepare
+		// começar por fazer as verificações todas
+		prePreparesLog.get(n).getViewN(); // view do pre-prepare
+		prePreparesLog.get(n).getDigest(); // digest do pre-prepare
 		prePreparesLog.size();
-		
-		if(preparesLog.get(n).size() < 2 * f){
-			return false;
-		} 
-		//else if (){ // já passou no tamanho, verificar que os fields do prepare q lá está são iguais aos do parâmetro
 
+		if (preparesLog.get(n).size() < 2 * f) {
+			return false;
+		}
+		// else if (){ // já passou no tamanho, verificar que os fields do prepare q lá
+		// está são iguais aos do parâmetro
 
 		return true;
 	}
@@ -180,21 +204,73 @@ public class PBFTProtocol extends GenericProtocol {
 		return prepared(m, v, n) && commitsLog.get(n).size() >= 2 * f + 1;
 	}
 
-	/* --------------------------------------- Request Handlers ----------------------------------- */
+	/*
+	 * --------------------------------------- Request Handlers
+	 * -----------------------------------
+	 */
 
 	private void uponProposeRequest(ProposeRequest req, short sourceProto) {
 		logger.info("Received request: " + req);
-		//view.forEach(h -> sendMessage(new PrePrepareMessage(), h) );
+		var prepareMessage = new PrepareMessage(viewN, seq, req.getDigest(), cryptoName);
+		var prePrepareMessage = new PrePrepareMessage(viewN, seq, req.getDigest(), req);
+		prePreparesLog.put(seq, prePrepareMessage);
+		preparesLog.computeIfAbsent(seq, k -> new HashSet<>()).add(prepareMessage);
+		try {
+			prePrepareMessage.signMessage(key);
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException e) {
+			throw new RuntimeException(e);
+		}
+		view.forEach(h -> sendMessage(prePrepareMessage, h));
 	}
 
-	/* --------------------------------------- Message Handlers ----------------------------------- */
+	/*
+	 * --------------------------------------- Message Handlers -----------------------------------
+	 */
 
 	private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-		//TODO: Implement
+
+		
+
+		try {
+
+			if (prePreparesLog.containsKey(msg.getSeq())) {
+				logger.warn("PrePrepareMessage already exists.");
+				return;
+			}
+
+			if (Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
+				logger.warn("Digests don't match.");
+				return;
+
+			}
+
+			if (!msg.checkSignature(publicKeys.get(primaryCryptoName))) {
+				logger.warn("Invalid signature.");
+				return;
+			}
+
+		} catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException e) {
+			logger.warn(e.getMessage());
+			return;
+		}
+
+		prePreparesLog.put(seq, msg);
+
+		var prepareMessage = new PrepareMessage(msg, cryptoName);
+		try {
+			prepareMessage.signMessage(key);
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
+			throw new RuntimeException(e);
+		}
+
+		view.forEach(h -> {
+			sendMessage(prepareMessage, h); //sends to himself 2
+		});
+
 	}
 
 	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-		//TODO: Implement
+		// TODO : Implement
 
 		// if prepared(m, v, n) then send signed commit to all replicas
 	}
@@ -203,10 +279,15 @@ public class PBFTProtocol extends GenericProtocol {
 		assert msg.getSeq() < nextToExecute;
 
 		try {
-			if (msg.getViewN() == viewN && msg.checkSignature(publicKeys.get(msg.getCryptoName())) && seq > lowH && seq < highH)
+			if (msg.getViewN() == viewN && msg.checkSignature(publicKeys.get(msg.getCryptoName())) && seq > lowH
+					&& seq < highH)
 				commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
-		} catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException |
-				 InvalidKeyException e) {
+			else {
+				logger.warn("Invalid message.");
+				return;
+			}
+		} catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException
+				| InvalidKeyException e) {
 			logger.warn(e.getMessage());
 			return;
 		}
@@ -214,39 +295,45 @@ public class PBFTProtocol extends GenericProtocol {
 		commitRequests();
 	}
 
-	/* --------------------------------------- Notification Handlers ----------------------------------- */
+	/*
+	 * --------------------------------------- Notification Handlers ------------------------------------------
+	 */
 
-	/* --------------------------------------- Timer Handlers ----------------------------------- */
+	/*
+	 * --------------------------------------- Timer Handlers -------------------------------------------------
+	 */
 
-	/* --------------------------------------- Connection Manager Functions ----------------------------------- */
-	
-    private void uponOutConnectionUp(OutConnectionUp event, int channel) {
-        logger.info(event);
-    }
+	/*
+	 * --------------------------------------- Connection Manager Functions -----------------------------------
+	 */
 
-    private void uponOutConnectionDown(OutConnectionDown event, int channel) {
-        logger.warn(event);
-    }
+	private void uponOutConnectionUp(OutConnectionUp event, int channel) {
+		logger.info(event);
+	}
 
-    private void uponOutConnectionFailed(OutConnectionFailed<ProtoMessage> ev, int ch) {
-    	logger.warn(ev); 
-    	openConnection(ev.getNode());
-    }
+	private void uponOutConnectionDown(OutConnectionDown event, int channel) {
+		logger.warn(event);
+	}
 
-    private void uponInConnectionUp(InConnectionUp event, int channel) {
-        logger.info(event);
-    }
+	private void uponOutConnectionFailed(OutConnectionFailed<ProtoMessage> ev, int ch) {
+		logger.warn(ev);
+		openConnection(ev.getNode());
+	}
 
-    private void uponInConnectionDown(InConnectionDown event, int channel) {
-        logger.warn(event);
-    }
-	
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
-    public void submitOperation(byte[] b, byte[] sig) {
+	private void uponInConnectionUp(InConnectionUp event, int channel) {
+		logger.info(event);
+	}
+
+	private void uponInConnectionDown(InConnectionDown event, int channel) {
+		logger.warn(event);
+	}
+
+	/*
+	 * ----------------------------------------------- APP INTERFACE ------------------------------------------
+	 */
+	public void submitOperation(byte[] b, byte[] sig) {
 		if (primaryCryptoName.equals(cryptoName))
-    		sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
-    }
-	
+			sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
+	}
+
 }
