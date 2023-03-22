@@ -30,10 +30,9 @@ if '__main__' == __name__:
             "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=node{i}",
             "-jar", "csd2223-proj1.jar",
             f"base_port={base_port + i}",
-            f"crypto_name=node{i}"]
+            f"crypto_name=node{i}",
+            f"bootstrap_primary=node1"]
 
-        if i == 1:
-            cmd.append(f"bootstrap_primary=node{i}")
         subprocess.Popen(cmd)
         #subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
