@@ -18,6 +18,7 @@ import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
+import utils.Utils;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -133,17 +134,14 @@ public class PBFTProtocol extends GenericProtocol {
         view.forEach(this::openConnection);
     }
 
-    /*
-     * --------------------------------------- Auxiliary Functions
-     * -----------------------------------
-     */
+     // --------------------------------------- Auxiliary Functions -----------------------------------
 
     private void commitRequests() {
         var request = prePreparesLog.get(nextToExecute).getRequest();
         while (request != null && committed(viewN, nextToExecute)) {
             triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
-            nextToExecute++;
-            request = prePreparesLog.get(nextToExecute).getRequest();
+            logger.info("Committed request seq=" + nextToExecute + ", view=" + viewN + ": " + Utils.bytesToHex(request.getDigest()));
+            request = prePreparesLog.get(++nextToExecute).getRequest();
         }
     }
 
@@ -230,10 +228,9 @@ public class PBFTProtocol extends GenericProtocol {
     private boolean prepared(int v, int n) {
         var prePrepare = prePreparesLog.get(n);
         var prepares = preparesLog.get(n);
-        return prePrepare != null && prePrepare.getViewN() == v && prepares != null &&
-                prepares.size() >= 2 * f + 1 &&
-                prepares.stream().filter(prepare -> prepare.getViewN() == v && prepare.getSeq() == n &&
-                        Arrays.equals(prepare.getDigest(), prePrepare.getDigest())).count() >= 2L * f + 1;
+        return prePrepare != null && prePrepare.getViewN() == v && prepares != null && prepares.size() >= 2 * f + 1 &&
+               prepares.stream().filter(prepare -> prepare.getViewN() == v && prepare.getSeq() == n &&
+                       Arrays.equals(prepare.getDigest(), prePrepare.getDigest())).count() >= 2L * f + 1;
         // 2f + 1 because it includes the pre-prepare from the primary
     }
 
@@ -268,9 +265,7 @@ public class PBFTProtocol extends GenericProtocol {
         seq++;
     }
 
-    /*
-     * --------------------------------------- Message Handlers -----------------------------------
-     */
+    // --------------------------------------- Message Handlers -----------------------------------
 
     private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
         if (!validatePrePrepare(msg))
@@ -314,17 +309,11 @@ public class PBFTProtocol extends GenericProtocol {
         commitRequests();
     }
 
-    /*
-     * --------------------------------------- Notification Handlers ------------------------------------------
-     */
+    // --------------------------------------- Notification Handlers ------------------------------------------
 
-    /*
-     * --------------------------------------- Timer Handlers -------------------------------------------------
-     */
+    // --------------------------------------- Timer Handlers -------------------------------------------------
 
-    /*
-     * --------------------------------------- Connection Manager Functions -----------------------------------
-     */
+    // --------------------------------------- Connection Manager Functions -----------------------------------
 
     private void uponOutConnectionUp(OutConnectionUp event, int channel) {
         logger.info(event);

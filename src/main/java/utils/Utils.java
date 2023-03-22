@@ -40,4 +40,12 @@ public class Utils {
         }
     };
 
+    public static String bytesToHex(byte[] bytes) {
+        var hexString = new StringBuilder();
+        for (var b : bytes) {
+            hexString.append(String.format("%02X ", b));
+        }
+        return hexString.toString();
+    }
+
 }
