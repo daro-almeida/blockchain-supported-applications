@@ -26,7 +26,7 @@ if '__main__' == __name__:
             "-w", "/usr/local/",
             "openjdk:17",
 
-            "java",
+            "java", "-ea"
             "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=node{i}",
             "-jar", "csd2223-proj1.jar",
             f"base_port={base_port + i}",
