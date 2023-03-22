@@ -16,6 +16,9 @@ public class CommitMessage extends SignedProtoMessage {
     private final byte[] digest;
     private final String cryptoName;
 
+    public CommitMessage(PrepareMessage msg, String cryptoName) {
+        this(msg.getViewN(), msg.getSeq(), msg.getDigest(), cryptoName);
+    }
 
     public CommitMessage(int viewN, int seq, byte[] digest, String cryptoName) {
         super(CommitMessage.MESSAGE_ID);

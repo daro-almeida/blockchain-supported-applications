@@ -170,7 +170,7 @@ public class PBFTProtocol extends GenericProtocol {
 			triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
 			nextToExecute++;
 			request = prePreparesLog.get(nextToExecute).getRequest();
-		}
+		} 
 	}
 
 	/*
@@ -186,18 +186,20 @@ public class PBFTProtocol extends GenericProtocol {
 	 * that match the pre-prepare.
 	 */
 	private boolean prepared(ProposeRequest m, int v, int n) {
-		// começar por fazer as verificações todas
-		prePreparesLog.get(n).getViewN(); // view do pre-prepare
-		prePreparesLog.get(n).getDigest(); // digest do pre-prepare
-		prePreparesLog.size();
 
-		if (preparesLog.get(n).size() < 2 * f) {
+		while (preparesLog.get(n).size() < 2 * f) {
 			return false;
 		}
-		// else if (){ // já passou no tamanho, verificar que os fields do prepare q lá
-		// está são iguais aos do parâmetro
 
-		return true;
+		PrePrepareMessage prePrepareMessage = prePreparesLog.get(n);
+
+		if(prePrepareMessage == null){
+			return false;
+		} else if(prePrepareMessage.getRequest() != m || prePrepareMessage.getViewN() != v ){
+			return true;
+		}
+
+		return false;
 	}
 
 	private boolean committed(ProposeRequest m, int v, int n) {
@@ -228,8 +230,6 @@ public class PBFTProtocol extends GenericProtocol {
 	 */
 
 	private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-
-		
 
 		try {
 
@@ -264,15 +264,34 @@ public class PBFTProtocol extends GenericProtocol {
 		}
 
 		view.forEach(h -> {
-			sendMessage(prepareMessage, h); //sends to himself 2
+			sendMessage(prepareMessage, h); 
 		});
 
 	}
 
 	private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-		// TODO : Implement
 
-		// if prepared(m, v, n) then send signed commit to all replicas
+		ProposeRequest request = prePreparesLog.get(nextToExecute).getRequest();
+
+		if(msg.getViewN() == viewN && prepared(request, viewN, seq)){
+
+			preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
+			var commitMessage = new CommitMessage(msg, cryptoName);
+
+			try {
+				commitMessage.signMessage(key);
+			} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
+				throw new RuntimeException(e);
+			}
+
+			view.forEach(h -> {
+				sendMessage(commitMessage, h);
+			});
+		} else {
+			logger.warn("Invalid message.");
+			return;
+		}
+
 	}
 
 	private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
