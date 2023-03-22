@@ -6,6 +6,7 @@ import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import utils.Utils;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Objects;
 
 public class CommitMessage extends SignedProtoMessage {
@@ -70,12 +71,14 @@ public class CommitMessage extends SignedProtoMessage {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         CommitMessage that = (CommitMessage) o;
-        return getViewN() == that.getViewN() && getSeq() == that.getSeq() && getCryptoName().equals(that.getCryptoName());
+        return getViewN() == that.getViewN() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getViewN(), getSeq(), getCryptoName());
+        int result = Objects.hash(getViewN(), getSeq(), getCryptoName());
+        result = 31 * result + Arrays.hashCode(getDigest());
+        return result;
     }
 
     public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {

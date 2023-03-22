@@ -77,11 +77,13 @@ public class PrepareMessage extends SignedProtoMessage {
 		if (this == o) return true;
 		if (o == null || getClass() != o.getClass()) return false;
 		PrepareMessage that = (PrepareMessage) o;
-		return getViewN() == that.getViewN() && getSeq() == that.getSeq() && getCryptoName().equals(that.getCryptoName());
+		return getViewN() == that.getViewN() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(getViewN(), getSeq(), getCryptoName());
+		int result = Objects.hash(getViewN(), getSeq(), getCryptoName());
+		result = 31 * result + Arrays.hashCode(getDigest());
+		return result;
 	}
 }

@@ -2,6 +2,8 @@ package consensus.messages;
 
 import java.io.*;
 import java.security.*;
+import java.util.Arrays;
+import java.util.Objects;
 
 import consensus.requests.ProposeRequest;
 import io.netty.buffer.ByteBuf;
@@ -104,4 +106,19 @@ public class PrePrepareMessage extends ProtoMessage {
 			return new PrePrepareMessage(viewN, seq, digest, request, signature);
 		}
 	};
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		PrePrepareMessage that = (PrePrepareMessage) o;
+		return getViewN() == that.getViewN() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest());
+	}
+
+	@Override
+	public int hashCode() {
+		int result = Objects.hash(getViewN(), getSeq());
+		result = 31 * result + Arrays.hashCode(getDigest());
+		return result;
+	}
 }
