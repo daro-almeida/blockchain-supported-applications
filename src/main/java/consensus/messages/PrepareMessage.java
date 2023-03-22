@@ -2,6 +2,7 @@ package consensus.messages;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Objects;
 
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
@@ -51,8 +52,7 @@ public class PrepareMessage extends SignedProtoMessage {
 		public void serializeBody(PrepareMessage signedProtoMessage, ByteBuf out) throws IOException {
 			out.writeInt(signedProtoMessage.viewN);
             out.writeInt(signedProtoMessage.seq);
-            out.writeInt(signedProtoMessage.digest.length);
-            out.writeBytes(signedProtoMessage.digest);
+            Utils.byteArraySerializer.serialize(signedProtoMessage.digest, out);
             Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
 			
 		}
@@ -60,12 +60,10 @@ public class PrepareMessage extends SignedProtoMessage {
 		@Override
 		public PrepareMessage deserializeBody(ByteBuf in) throws IOException {
 			int viewN = in.readInt();
-            int seq = in.readInt();
-            int digestLength = in.readInt();
-            byte[] digest = new byte[digestLength];
-            in.readBytes(digest);
-            String cryptoName = Utils.stringSerializer.deserialize(in);
-            return new PrepareMessage(viewN, seq, digest, cryptoName);
+			int seq = in.readInt();
+			byte[] digest = Utils.byteArraySerializer.deserialize(in);
+			String cryptoName = Utils.stringSerializer.deserialize(in);
+			return new PrepareMessage(viewN, seq, digest, cryptoName);
 		}
 	};
 
@@ -74,28 +72,16 @@ public class PrepareMessage extends SignedProtoMessage {
 		return PrepareMessage.serializer;
 	}
 
-
 	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		PrepareMessage other = (PrepareMessage) obj;
-		if (viewN != other.viewN)
-			return false;
-		if (seq != other.seq)
-			return false;
-		if (!Arrays.equals(digest, other.digest))
-			return false;
-		if (cryptoName == null) {
-			if (other.cryptoName != null)
-				return false;
-		} else if (!cryptoName.equals(other.cryptoName))
-			return false;
-		return true;
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		PrepareMessage that = (PrepareMessage) o;
+		return getViewN() == that.getViewN() && getSeq() == that.getSeq() && getCryptoName().equals(that.getCryptoName());
 	}
 
+	@Override
+	public int hashCode() {
+		return Objects.hash(getViewN(), getSeq(), getCryptoName());
+	}
 }
