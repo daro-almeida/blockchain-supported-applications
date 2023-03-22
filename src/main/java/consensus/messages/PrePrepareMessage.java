@@ -8,6 +8,7 @@ import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.SignaturesHelper;
+import utils.Utils;
 
 public class PrePrepareMessage extends ProtoMessage {
 
@@ -82,13 +83,11 @@ public class PrePrepareMessage extends ProtoMessage {
 		public void serialize(PrePrepareMessage prePrepareMessage, ByteBuf byteBuf) throws IOException {
 			byteBuf.writeInt(prePrepareMessage.viewN);
 			byteBuf.writeInt(prePrepareMessage.seq);
-			byteBuf.writeInt(prePrepareMessage.digest.length);
-			byteBuf.writeBytes(prePrepareMessage.digest);
+			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
 			ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
 
 			if (prePrepareMessage.signature != null) {
-				byteBuf.writeInt(prePrepareMessage.signature.length);
-				byteBuf.writeBytes(prePrepareMessage.signature);
+				Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
 			} else {
 				throw new RuntimeException("PrePrepareMessage signature is null");
 			}
@@ -98,12 +97,9 @@ public class PrePrepareMessage extends ProtoMessage {
 		public PrePrepareMessage deserialize(ByteBuf byteBuf) throws IOException {
 			int viewN = byteBuf.readInt();
 			int seq = byteBuf.readInt();
-			byte[] digest = new byte[byteBuf.readInt()];
-			byteBuf.readBytes(digest);
+			byte[] digest = Utils.byteArraySerializer.deserialize(byteBuf);
 			ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
-
-			byte[] signature = new byte[byteBuf.readInt()];
-			byteBuf.readBytes(signature);
+			byte[] signature = Utils.byteArraySerializer.deserialize(byteBuf);
 
 			return new PrePrepareMessage(viewN, seq, digest, request, signature);
 		}

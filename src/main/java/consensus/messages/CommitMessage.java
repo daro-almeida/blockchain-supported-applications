@@ -48,8 +48,7 @@ public class CommitMessage extends SignedProtoMessage {
         public void serializeBody(CommitMessage signedProtoMessage, ByteBuf out) throws IOException {
             out.writeInt(signedProtoMessage.viewN);
             out.writeInt(signedProtoMessage.seq);
-            out.writeInt(signedProtoMessage.digest.length);
-            out.writeBytes(signedProtoMessage.digest);
+            Utils.byteArraySerializer.serialize(signedProtoMessage.digest, out);
             Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
         }
 
@@ -57,9 +56,7 @@ public class CommitMessage extends SignedProtoMessage {
         public CommitMessage deserializeBody(ByteBuf in) throws IOException {
             int viewN = in.readInt();
             int seq = in.readInt();
-            int digestLength = in.readInt();
-            byte[] digest = new byte[digestLength];
-            in.readBytes(digest);
+            byte[] digest = Utils.byteArraySerializer.deserialize(in);
             String cryptoName = Utils.stringSerializer.deserialize(in);
             return new CommitMessage(viewN, seq, digest, cryptoName);
         }
