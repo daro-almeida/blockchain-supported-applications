@@ -289,10 +289,11 @@ public class PBFTProtocol extends GenericProtocol {
             throw new RuntimeException(e);
         }
         view.forEach(h -> sendMessage(prepareMessage, h));
+        seq++;
     }
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
-        logger.info("Received PrepareMessage: " + msg.getSeq());
+        logger.info("Received PrepareMessage: " + msg.getSeq() + " from " + msg.getCryptoName());
         if (!validatePrepare(msg))
             return;
 
@@ -314,7 +315,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-        logger.info("Received CommitMessage: " + msg.getSeq());
+        logger.info("Received CommitMessage: " + msg.getSeq() + " from " + msg.getCryptoName());
 
         if (!validateCommit(msg))
             return;
