@@ -47,6 +47,7 @@ public class PBFTProtocol extends GenericProtocol {
     private final Map<Integer, Set<PrepareMessage>> preparesLog;
     // seq -> commit set
     private final Map<Integer, Set<CommitMessage>> commitsLog;
+    private final Set<Integer> sentCommits;
     private String cryptoName;
     private PrivateKey key;
     private int viewN;
@@ -69,6 +70,7 @@ public class PBFTProtocol extends GenericProtocol {
         this.preparesLog = new HashMap<>();
         this.commitsLog = new HashMap<>();
         this.unstableCheckpoints = new LinkedList<>();
+        this.sentCommits = new HashSet<>();
 
         // TODO change when checkpointing is implemented
         this.lowH = -1;
@@ -137,11 +139,12 @@ public class PBFTProtocol extends GenericProtocol {
      // --------------------------------------- Auxiliary Functions -----------------------------------
 
     private void commitRequests() {
-        var request = prePreparesLog.get(nextToExecute).getRequest();
-        while (request != null && committed(viewN, nextToExecute)) {
+        var prePrepare = prePreparesLog.get(nextToExecute);
+        while (prePrepare != null && committed(viewN, nextToExecute)) {
+            var request = prePrepare.getRequest();
             triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
             logger.info("Committed request seq=" + nextToExecute + ", view=" + viewN + ": " + Utils.bytesToHex(request.getDigest()));
-            request = prePreparesLog.get(++nextToExecute).getRequest();
+            prePrepare = prePreparesLog.get(++nextToExecute);
         }
     }
 
@@ -159,8 +162,9 @@ public class PBFTProtocol extends GenericProtocol {
                 logger.warn("PrePrepareMessage already exists: " + msg.getSeq());
                 return false;
             }
-            if (Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
-                logger.warn("PrePrepareMessage: Digests don't match: " + msg.getSeq());
+            if (!Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
+                logger.warn("PrePrepareMessage: Digests don't match: seq=" + msg.getSeq() + ": " +
+                        Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
                 return false;
             }
             if (!msg.checkSignature(publicKeys.get(primaryCryptoName))) {
@@ -184,7 +188,7 @@ public class PBFTProtocol extends GenericProtocol {
                 logger.warn("PrepareMessage: Invalid sequence number: " + msg.getSeq() + " not in [" + lowH + ", " + highH + "]");
                 return false;
             }
-            if (msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
+            if (!msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
                 logger.warn("PrepareMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getCryptoName());
                 return false;
             }
@@ -206,7 +210,7 @@ public class PBFTProtocol extends GenericProtocol {
                 logger.warn("CommitMessage: Invalid sequence number: " + msg.getSeq() + " not in [" + lowH + ", " + highH + "]");
                 return false;
             }
-            if (msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
+            if (!msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
                 logger.warn("CommitMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getCryptoName());
                 return false;
             }
@@ -251,7 +255,7 @@ public class PBFTProtocol extends GenericProtocol {
     private void uponProposeRequest(ProposeRequest req, short sourceProto) {
         assert cryptoName.equals(primaryCryptoName);
 
-        logger.info("Received request: " + req);
+        logger.info("Received request: " + Utils.bytesToHex(req.getDigest()));
         var prePrepareMessage = new PrePrepareMessage(viewN, seq, req.getDigest(), req);
         prePreparesLog.put(seq, prePrepareMessage);
         var prepareMessage = new PrepareMessage(prePrepareMessage, primaryCryptoName);
@@ -261,17 +265,23 @@ public class PBFTProtocol extends GenericProtocol {
         } catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException e) {
             throw new RuntimeException(e);
         }
-        view.forEach(h -> sendMessage(prePrepareMessage, h));
+        view.forEach(h -> {
+            if (!h.equals(self))
+                sendMessage(prePrepareMessage, h);
+        });
         seq++;
     }
 
     // --------------------------------------- Message Handlers -----------------------------------
 
     private void uponPrePrepareMessage(PrePrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
+        logger.info("Received PrePrepareMessage: " + msg.getSeq());
         if (!validatePrePrepare(msg))
             return;
 
         prePreparesLog.put(seq, msg);
+        preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(new PrepareMessage(msg, primaryCryptoName));
+
         var prepareMessage = new PrepareMessage(msg, cryptoName);
         try {
             prepareMessage.signMessage(key);
@@ -282,10 +292,13 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
+        logger.info("Received PrepareMessage: " + msg.getSeq());
         if (!validatePrepare(msg))
             return;
 
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
+
+        if (sentCommits.contains(msg.getSeq())) return;
         var prePrepare = prePreparesLog.get(msg.getSeq());
         if (prePrepare != null && prepared(msg.getViewN(), msg.getSeq())) {
             var commitMessage = new CommitMessage(msg, cryptoName);
@@ -296,17 +309,20 @@ public class PBFTProtocol extends GenericProtocol {
                 throw new RuntimeException(e);
             }
             view.forEach(h -> sendMessage(commitMessage, h));
+            sentCommits.add(msg.getSeq());
         }
     }
 
     private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
-        assert msg.getSeq() < nextToExecute;
+        logger.info("Received CommitMessage: " + msg.getSeq());
+
         if (!validateCommit(msg))
             return;
 
         commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
 
-        commitRequests();
+        if (msg.getSeq() == nextToExecute)
+            commitRequests();
     }
 
     // --------------------------------------- Notification Handlers ------------------------------------------
@@ -316,7 +332,7 @@ public class PBFTProtocol extends GenericProtocol {
     // --------------------------------------- Connection Manager Functions -----------------------------------
 
     private void uponOutConnectionUp(OutConnectionUp event, int channel) {
-        logger.info(event);
+        logger.debug(event);
     }
 
     private void uponOutConnectionDown(OutConnectionDown event, int channel) {
@@ -329,7 +345,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponInConnectionUp(InConnectionUp event, int channel) {
-        logger.info(event);
+        logger.debug(event);
     }
 
     private void uponInConnectionDown(InConnectionDown event, int channel) {
