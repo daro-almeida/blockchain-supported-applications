@@ -15,6 +15,7 @@ import java.util.Enumeration;
 import java.util.Properties;
 import java.util.Random;
 
+import blockchain.BlockChainProtocol;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -29,8 +30,8 @@ import utils.SignaturesHelper;
 public class RandomGenerationOperationApp {
 
     private static final Logger logger = LogManager.getLogger(RandomGenerationOperationApp.class);
-  
-    private static final short block_size = 4096;
+
+    private static final short operation_size = 4096;
     
     private Random r;
     
@@ -51,54 +52,48 @@ public class RandomGenerationOperationApp {
     public RandomGenerationOperationApp(Properties props) throws IOException, ProtocolAlreadyExistsException,
             HandlerRegistrationException, GeneralSecurityException {
 
-    	r = new Random(System.currentTimeMillis());
-    	
+        r = new Random(System.currentTimeMillis());
+
         Babel babel = Babel.getInstance();
 
+        BlockChainProtocol bc = new BlockChainProtocol(props);
         PBFTProtocol pbft = new PBFTProtocol(props);
 
+        babel.registerProtocol(bc);
         babel.registerProtocol(pbft);
-        
+
+        bc.init(props);
         pbft.init(props);
 
         babel.start();
-        
         logger.info("Babel has started...");
-        
-        String cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
-        key = Crypto.getPrivateKey(cryptoName, props);
-        
-        logger.info("Waiting 2s to start issuing requests.");
-        
-        try { Thread.sleep(2 * 1000); } catch (InterruptedException e1) { }
-        
+
+        logger.info("Waiting 10s to start issuing requests.");
+
+        try { Thread.sleep(10 * 1000); } catch (InterruptedException e1) { }
+
         Thread t = new Thread(new Runnable() {
-			
-			@Override
-			public void run() {
-		        while(true) {
-		        	try {
-			        	byte[] block = new byte[RandomGenerationOperationApp.block_size];
-			        	r.nextBytes(block);
-			        	byte[] signature = SignaturesHelper.generateSignature(block, key);
-			        
-			        	pbft.submitOperation(block, signature);
-			        	      
-						Thread.sleep(5 * 1000);
-					} catch (InterruptedException e) {
-						//nothing to be done here
-					} catch (InvalidKeyException e) {
-						e.printStackTrace();
-					} catch (NoSuchAlgorithmException e) {
-						e.printStackTrace();
-					} catch (SignatureException e) {
-						e.printStackTrace();
-					} //Wait 5 seconds
-		        }
-			}
-		});
+
+            @Override
+            public void run() {
+                while(true) {
+                    try {
+                        logger.info("Generating random request.");
+
+                        byte[] block = new byte[RandomGenerationOperationApp.operation_size];
+                        r.nextBytes(block);
+
+                        bc.submitClientOperation(block);
+
+                        Thread.sleep(5 * 1000);
+                    } catch (InterruptedException e) {
+                        //nothing to be done here
+                    } //Wait 5 seconds
+                }
+            }
+        });
         t.start();
-        
+
         logger.info("Request generation thread is running.");
     }
 
