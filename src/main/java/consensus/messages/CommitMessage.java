@@ -13,25 +13,25 @@ public class CommitMessage extends SignedProtoMessage {
 
     public final static short MESSAGE_ID = 103;
 
-    private final int viewN, seq;
+    private final int viewNumber, seq;
     private final byte[] digest;
     private final String cryptoName;
 
     public CommitMessage(PrepareMessage msg, String cryptoName) {
-        this(msg.getViewN(), msg.getSeq(), msg.getDigest(), cryptoName);
+        this(msg.getViewNumber(), msg.getSeq(), msg.getDigest(), cryptoName);
     }
 
-    public CommitMessage(int viewN, int seq, byte[] digest, String cryptoName) {
+    public CommitMessage(int viewNumber, int seq, byte[] digest, String cryptoName) {
         super(CommitMessage.MESSAGE_ID);
 
-        this.viewN = viewN;
+        this.viewNumber = viewNumber;
         this.seq = seq;
         this.digest = digest;
         this.cryptoName = cryptoName;
     }
 
-    public int getViewN() {
-        return viewN;
+    public int getViewNumber() {
+        return viewNumber;
     }
 
     public int getSeq() {
@@ -50,7 +50,7 @@ public class CommitMessage extends SignedProtoMessage {
 
         @Override
         public void serializeBody(CommitMessage signedProtoMessage, ByteBuf out) throws IOException {
-            out.writeInt(signedProtoMessage.viewN);
+            out.writeInt(signedProtoMessage.viewNumber);
             out.writeInt(signedProtoMessage.seq);
             Utils.byteArraySerializer.serialize(signedProtoMessage.digest, out);
             Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
@@ -71,12 +71,12 @@ public class CommitMessage extends SignedProtoMessage {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         CommitMessage that = (CommitMessage) o;
-        return getViewN() == that.getViewN() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
+        return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(getViewN(), getSeq(), getCryptoName());
+        int result = Objects.hash(getViewNumber(), getSeq(), getCryptoName());
         result = 31 * result + Arrays.hashCode(getDigest());
         return result;
     }

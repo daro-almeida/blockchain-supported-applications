@@ -16,11 +16,8 @@ public class ViewChange extends ProtoNotification {
 	
 	public ViewChange(List<Host> view, int viewNumber) {
 		super(ViewChange.NOTIFICATION_ID);
-		this.view = new LinkedList<Host>();
-		for(int i = 0; i < view.size(); i++) {
-			this.view.add(view.get(i));
-		}
-		
+		this.view = new LinkedList<>(view);
+
 		this.viewNumber = viewNumber;
 	}
 

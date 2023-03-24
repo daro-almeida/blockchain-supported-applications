@@ -16,28 +16,28 @@ public class PrePrepareMessage extends ProtoMessage {
 
 	public final static short MESSAGE_ID = 101;
 
-	private final int viewN, seq;
+	private final int viewNumber, seq;
 	private final byte[] digest;
 	private final ProposeRequest request;
 	private byte[] signature;
 
-	public PrePrepareMessage(int viewN, int seq, byte[] digest, ProposeRequest request) {
+	public PrePrepareMessage(int viewNumber, int seq, byte[] digest, ProposeRequest request) {
 		super(PrePrepareMessage.MESSAGE_ID);
 
-		this.viewN = viewN;
+		this.viewNumber = viewNumber;
 		this.seq = seq;
 		this.digest = digest;
 		this.request = request;
 	}
 
-	private PrePrepareMessage(int viewN, int seq, byte[] digest, ProposeRequest request, byte[] signature) {
-		this(viewN, seq, digest, request);
+	private PrePrepareMessage(int viewNumber, int seq, byte[] digest, ProposeRequest request, byte[] signature) {
+		this(viewNumber, seq, digest, request);
 
 		this.signature = signature;
 	}
 
-	public int getViewN() {
-		return viewN;
+	public int getViewNumber() {
+		return viewNumber;
 	}
 
 	public int getSeq() {
@@ -69,7 +69,7 @@ public class PrePrepareMessage extends ProtoMessage {
 		var outputStream = new DataOutputStream(byteArrayOutputStream);
 
 		try {
-			outputStream.writeInt(viewN);
+			outputStream.writeInt(viewNumber);
 			outputStream.writeInt(seq);
 			byteArrayOutputStream.write(digest);
 		} catch (IOException e) {
@@ -83,7 +83,7 @@ public class PrePrepareMessage extends ProtoMessage {
 
 		@Override
 		public void serialize(PrePrepareMessage prePrepareMessage, ByteBuf byteBuf) throws IOException {
-			byteBuf.writeInt(prePrepareMessage.viewN);
+			byteBuf.writeInt(prePrepareMessage.viewNumber);
 			byteBuf.writeInt(prePrepareMessage.seq);
 			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
 			ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
@@ -112,12 +112,12 @@ public class PrePrepareMessage extends ProtoMessage {
 		if (this == o) return true;
 		if (o == null || getClass() != o.getClass()) return false;
 		PrePrepareMessage that = (PrePrepareMessage) o;
-		return getViewN() == that.getViewN() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest());
+		return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest());
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(getViewN(), getSeq());
+		int result = Objects.hash(getViewNumber(), getSeq());
 		result = 31 * result + Arrays.hashCode(getDigest());
 		return result;
 	}

@@ -42,7 +42,6 @@ public class PBFTProtocol extends GenericProtocol {
     private final Host self;
     private final List<Host> view;
     private final int f;
-    private final List<Checkpoint> unstableCheckpoints;
     private final Map<Integer, PrePrepareMessage> prePreparesLog;
     private final Map<Integer, Set<PrepareMessage>> preparesLog;
     // seq -> commit set
@@ -50,12 +49,10 @@ public class PBFTProtocol extends GenericProtocol {
     private final Set<Integer> sentCommits;
     private String cryptoName;
     private PrivateKey key;
-    private int viewN;
+    private int viewNumber;
     private int seq;
     private int nextToExecute;
     private String primaryCryptoName;
-    private Checkpoint stableCheckpoint;
-    private int lowH, highH;
 
     public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
         super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
@@ -64,17 +61,12 @@ public class PBFTProtocol extends GenericProtocol {
 
         this.seq = 0;
         this.nextToExecute = 0;
-        this.viewN = 0;
+        this.viewNumber = 0;
         this.primaryCryptoName = props.getProperty("bootstrap_primary");
         this.prePreparesLog = new HashMap<>();
         this.preparesLog = new HashMap<>();
         this.commitsLog = new HashMap<>();
-        this.unstableCheckpoints = new LinkedList<>();
         this.sentCommits = new HashSet<>();
-
-        // TODO change when checkpointing is implemented
-        this.lowH = -1;
-        this.highH = Integer.MAX_VALUE;
 
         this.self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
                 Integer.parseInt(props.getProperty(PORT_KEY)));
@@ -143,22 +135,18 @@ public class PBFTProtocol extends GenericProtocol {
 
     private void commitRequests() {
         var prePrepare = prePreparesLog.get(nextToExecute);
-        while (prePrepare != null && committed(viewN, nextToExecute)) {
+        while (prePrepare != null && committed(viewNumber, nextToExecute)) {
             var request = prePrepare.getRequest();
             triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
-            logger.info("Committed request seq=" + nextToExecute + ", view=" + viewN + ": " + Utils.bytesToHex(request.getDigest()));
+            logger.info("Committed request seq=" + nextToExecute + ", view=" + viewNumber + ": " + Utils.bytesToHex(request.getDigest()));
             prePrepare = prePreparesLog.get(++nextToExecute);
         }
     }
 
     private boolean validatePrePrepare(PrePrepareMessage msg) {
         try {
-            if (msg.getViewN() != viewN) {
-                logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewN() + " != " + viewN);
-                return false;
-            }
-            if (msg.getSeq() < lowH || msg.getSeq() > highH) {
-                logger.warn("PrePrepareMessage: Invalid sequence number: " + msg.getSeq() + " not in [" + lowH + ", " + highH + "]");
+            if (msg.getViewNumber() != viewNumber) {
+                logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + viewNumber);
                 return false;
             }
             if (prePreparesLog.containsKey(msg.getSeq())) {
@@ -183,12 +171,8 @@ public class PBFTProtocol extends GenericProtocol {
 
     private boolean validatePrepare(PrepareMessage msg) {
         try {
-            if (msg.getViewN() != viewN) {
-                logger.warn("PrepareMessage: Invalid view number: " + msg.getViewN() + " != " + viewN);
-                return false;
-            }
-            if (msg.getSeq() < lowH || msg.getSeq() > highH) {
-                logger.warn("PrepareMessage: Invalid sequence number: " + msg.getSeq() + " not in [" + lowH + ", " + highH + "]");
+            if (msg.getViewNumber() != viewNumber) {
+                logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + viewNumber);
                 return false;
             }
             if (!msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
@@ -205,12 +189,8 @@ public class PBFTProtocol extends GenericProtocol {
 
     private boolean validateCommit(CommitMessage msg) {
         try {
-            if (msg.getViewN() != viewN) {
-                logger.warn("CommitMessage: Invalid view number: " + msg.getViewN() + " != " + viewN);
-                return false;
-            }
-            if (msg.getSeq() < lowH || msg.getSeq() > highH) {
-                logger.warn("CommitMessage: Invalid sequence number: " + msg.getSeq() + " not in [" + lowH + ", " + highH + "]");
+            if (msg.getViewNumber() != viewNumber) {
+                logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + viewNumber);
                 return false;
             }
             if (!msg.checkSignature(publicKeys.get(msg.getCryptoName()))) {
@@ -235,8 +215,8 @@ public class PBFTProtocol extends GenericProtocol {
     private boolean prepared(int v, int n) {
         var prePrepare = prePreparesLog.get(n);
         var prepares = preparesLog.get(n);
-        return prePrepare != null && prePrepare.getViewN() == v && prepares != null && prepares.size() >= 2 * f + 1 &&
-               prepares.stream().filter(prepare -> prepare.getViewN() == v && prepare.getSeq() == n &&
+        return prePrepare != null && prePrepare.getViewNumber() == v && prepares != null && prepares.size() >= 2 * f + 1 &&
+               prepares.stream().filter(prepare -> prepare.getViewNumber() == v && prepare.getSeq() == n &&
                        Arrays.equals(prepare.getDigest(), prePrepare.getDigest())).count() >= 2L * f + 1;
         // 2f + 1 because it includes the pre-prepare from the primary
     }
@@ -249,7 +229,7 @@ public class PBFTProtocol extends GenericProtocol {
     private boolean committed(int v, int n) {
         var commits = commitsLog.get(n);
         return  commits != null && prepared(v, n) && commits.size() >= 2 * f + 1 &&
-                commits.stream().filter(commit -> commit.getViewN() == v && commit.getSeq() == n &&
+                commits.stream().filter(commit -> commit.getViewNumber() == v && commit.getSeq() == n &&
                         Arrays.equals(commit.getDigest(), prePreparesLog.get(n).getDigest())).count() >= 2L * f + 1;
     }
 
@@ -259,7 +239,7 @@ public class PBFTProtocol extends GenericProtocol {
         assert cryptoName.equals(primaryCryptoName);
 
         logger.info("Received request: " + Utils.bytesToHex(req.getDigest()));
-        var prePrepareMessage = new PrePrepareMessage(viewN, seq, req.getDigest(), req);
+        var prePrepareMessage = new PrePrepareMessage(viewNumber, seq, req.getDigest(), req);
         prePreparesLog.put(seq, prePrepareMessage);
         var prepareMessage = new PrepareMessage(prePrepareMessage, primaryCryptoName);
         preparesLog.computeIfAbsent(seq, k -> new HashSet<>()).add(prepareMessage);
@@ -282,7 +262,7 @@ public class PBFTProtocol extends GenericProtocol {
         if (!validatePrePrepare(msg))
             return;
 
-        prePreparesLog.put(seq, msg);
+        prePreparesLog.put(msg.getSeq(), msg);
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(new PrepareMessage(msg, primaryCryptoName));
 
         var prepareMessage = new PrepareMessage(msg, cryptoName);
@@ -292,7 +272,7 @@ public class PBFTProtocol extends GenericProtocol {
             throw new RuntimeException(e);
         }
         view.forEach(h -> sendMessage(prepareMessage, h));
-        seq++;
+        seq = Math.max(msg.getSeq() + 1, seq);
     }
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
@@ -304,7 +284,7 @@ public class PBFTProtocol extends GenericProtocol {
 
         if (sentCommits.contains(msg.getSeq())) return;
         var prePrepare = prePreparesLog.get(msg.getSeq());
-        if (prePrepare != null && prepared(msg.getViewN(), msg.getSeq())) {
+        if (prePrepare != null && prepared(msg.getViewNumber(), msg.getSeq())) {
             var commitMessage = new CommitMessage(msg, cryptoName);
             try {
                 commitMessage.signMessage(key);
@@ -354,14 +334,6 @@ public class PBFTProtocol extends GenericProtocol {
 
     private void uponInConnectionDown(InConnectionDown event, int channel) {
         logger.warn(event);
-    }
-
-    /*
-     * ----------------------------------------------- APP INTERFACE ------------------------------------------
-     */
-    public void submitOperation(byte[] b, byte[] sig) {
-        if (primaryCryptoName.equals(cryptoName))
-            sendRequest(new ProposeRequest(b, sig), PBFTProtocol.PROTO_ID);
     }
 
 }
