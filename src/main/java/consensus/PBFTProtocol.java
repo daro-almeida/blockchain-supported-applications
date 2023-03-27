@@ -5,11 +5,13 @@ import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
 import consensus.notifications.CommittedNotification;
 import consensus.requests.ProposeRequest;
+import consensus.requests.SuspectLeader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
+import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
@@ -105,6 +107,7 @@ public class PBFTProtocol extends GenericProtocol {
         logger.info("Standing by to establish connections (5s)");
 
         registerRequestHandler(ProposeRequest.REQUEST_ID, this::uponProposeRequest);
+        registerRequestHandler(SuspectLeader.REQUEST_ID, this::uponSuspectLeaderRequest);
 
         registerMessageHandler(peerChannel, PrePrepareMessage.MESSAGE_ID, this::uponPrePrepareMessage);
         registerMessageHandler(peerChannel, PrepareMessage.MESSAGE_ID, this::uponPrepareMessage);
@@ -131,7 +134,7 @@ public class PBFTProtocol extends GenericProtocol {
         //triggerNotification(new ViewChange(view, viewNumber));
     }
 
-     // --------------------------------------- Auxiliary Functions -----------------------------------
+    // --------------------------------------- Auxiliary Functions -----------------------------------
 
     private void commitRequests() {
         var prePrepare = prePreparesLog.get(nextToExecute);
@@ -215,6 +218,7 @@ public class PBFTProtocol extends GenericProtocol {
     private boolean prepared(int v, int n) {
         var prePrepare = prePreparesLog.get(n);
         var prepares = preparesLog.get(n);
+        //TODO not optimal but works, fix later
         return prePrepare != null && prePrepare.getViewNumber() == v && prepares != null && prepares.size() >= 2 * f + 1 &&
                prepares.stream().filter(prepare -> prepare.getViewNumber() == v && prepare.getSeq() == n &&
                        Arrays.equals(prepare.getDigest(), prePrepare.getDigest())).count() >= 2L * f + 1;
@@ -228,6 +232,7 @@ public class PBFTProtocol extends GenericProtocol {
      */
     private boolean committed(int v, int n) {
         var commits = commitsLog.get(n);
+        //TODO not optimal but works, fix later
         return  commits != null && prepared(v, n) && commits.size() >= 2 * f + 1 &&
                 commits.stream().filter(commit -> commit.getViewNumber() == v && commit.getSeq() == n &&
                         Arrays.equals(commit.getDigest(), prePreparesLog.get(n).getDigest())).count() >= 2L * f + 1;
@@ -254,6 +259,14 @@ public class PBFTProtocol extends GenericProtocol {
         });
         seq++;
     }
+
+    private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
+        //TODO NOW
+
+    }
+
+
+
 
     // --------------------------------------- Message Handlers -----------------------------------
 

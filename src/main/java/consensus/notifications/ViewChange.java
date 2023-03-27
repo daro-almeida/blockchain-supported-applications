@@ -12,6 +12,7 @@ public class ViewChange extends ProtoNotification {
 	
 	private final List<Host> view;
 	private final int viewNumber;
+	//leader
 	
 	
 	public ViewChange(List<Host> view, int viewNumber) {

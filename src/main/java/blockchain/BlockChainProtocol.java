@@ -29,6 +29,8 @@ import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
 import utils.SignaturesHelper;
 
+import javax.management.RuntimeErrorException;
+
 public class BlockChainProtocol extends GenericProtocol {
 
 	private static final String PROTO_NAME = "blockchain";
@@ -80,8 +82,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			key = Crypto.getPrivateKey(cryptoName, props);
 		} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException | CertificateException
 				| IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 		
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
@@ -114,8 +115,7 @@ public class BlockChainProtocol extends GenericProtocol {
 				
 				sendRequest(new ProposeRequest(request, signature), PBFTProtocol.PROTO_ID);
 			} catch (Exception e) {
-				e.printStackTrace();
-				System.exit(1); //Catastrophic failure!!!
+				throw new RuntimeException(e);
 			}
 		} else {
 			//TODO: Redirect this request to the leader via a specialized message
@@ -128,16 +128,14 @@ public class BlockChainProtocol extends GenericProtocol {
     
 	public void handleViewChangeNotification(ViewChange vc, short from) {
 		logger.info("New view received (" + vc.getViewNumber() + ")");
-		
+
+		//TODO NOW
 		//TODO: Should maybe validate this ViewChange :)
 		
 		this.viewNumber = vc.getViewNumber();
 		this.view.clear();
-		for(int i = 0; i < vc.getView().size(); i++) {
-			this.view.add(vc.getView().get(i));
-		}
-		//TODO: Compute correctly who is the leader and not assume that you are always the leader.
-		this.leader = true;
+		this.view.addAll(vc.getView());
+		//this.leader = true;
 		
 	}
 	
@@ -149,18 +147,17 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ---------------------------------------------- MESSAGE HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     
-	//TODO: add message handlers (and register them)
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- TIMER HANDLER ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     
 	public void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
-		//TODO: write this handler
+		//TODO NOW maybe
 	}
 	
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
-		//TODO: write this handler
+		//TODO NOW
 	}
 	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
