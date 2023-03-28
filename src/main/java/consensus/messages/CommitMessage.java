@@ -15,19 +15,19 @@ public class CommitMessage extends SignedProtoMessage {
 
     private final int viewNumber, seq;
     private final byte[] digest;
-    private final String cryptoName;
+    private final int nodeId;
 
-    public CommitMessage(PrepareMessage msg, String cryptoName) {
-        this(msg.getViewNumber(), msg.getSeq(), msg.getDigest(), cryptoName);
+    public CommitMessage(PrepareMessage msg, int nodeId) {
+        this(msg.getViewNumber(), msg.getSeq(), msg.getDigest(), nodeId);
     }
 
-    public CommitMessage(int viewNumber, int seq, byte[] digest, String cryptoName) {
+    public CommitMessage(int viewNumber, int seq, byte[] digest, int nodeId) {
         super(CommitMessage.MESSAGE_ID);
 
         this.viewNumber = viewNumber;
         this.seq = seq;
         this.digest = digest;
-        this.cryptoName = cryptoName;
+        this.nodeId = nodeId;
     }
 
     public int getViewNumber() {
@@ -42,8 +42,8 @@ public class CommitMessage extends SignedProtoMessage {
         return digest;
     }
 
-    public String getCryptoName() {
-    	return cryptoName;
+    public int getNodeId() {
+        return nodeId;
     }
 
     public static final SignedMessageSerializer<CommitMessage> serializer = new SignedMessageSerializer<>() {
@@ -53,7 +53,7 @@ public class CommitMessage extends SignedProtoMessage {
             out.writeInt(signedProtoMessage.viewNumber);
             out.writeInt(signedProtoMessage.seq);
             Utils.byteArraySerializer.serialize(signedProtoMessage.digest, out);
-            Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
+            out.writeInt(signedProtoMessage.nodeId);
         }
 
         @Override
@@ -61,8 +61,8 @@ public class CommitMessage extends SignedProtoMessage {
             int viewN = in.readInt();
             int seq = in.readInt();
             byte[] digest = Utils.byteArraySerializer.deserialize(in);
-            String cryptoName = Utils.stringSerializer.deserialize(in);
-            return new CommitMessage(viewN, seq, digest, cryptoName);
+            int id = in.readInt();
+            return new CommitMessage(viewN, seq, digest, id);
         }
     };
 
@@ -71,12 +71,12 @@ public class CommitMessage extends SignedProtoMessage {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         CommitMessage that = (CommitMessage) o;
-        return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
+        return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && getNodeId() == that.getNodeId() && Arrays.equals(getDigest(), that.getDigest());
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(getViewNumber(), getSeq(), getCryptoName());
+        int result = Objects.hash(getViewNumber(), getSeq(), getNodeId());
         result = 31 * result + Arrays.hashCode(getDigest());
         return result;
     }

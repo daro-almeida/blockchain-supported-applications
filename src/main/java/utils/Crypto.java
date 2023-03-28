@@ -8,6 +8,7 @@ import java.util.Properties;
 
 public class Crypto {
 
+    public static final String CRYPTO_NAME_PREFIX = "node";
     public static final String CRYPTO_NAME_KEY = "crypto_name";
 	public static final String KEY_STORE_LOCATION_KEY = "key_store_folder";
     public static final String KEY_STORE_PASSWORD_KEY = "key_store_password";

@@ -6,7 +6,7 @@ import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
 
 public class SuspectLeader extends ProtoRequest {
 
-	public final static short REQUEST_ID = 101;
+	public final static short REQUEST_ID = 102;
 	
 	//Represents the client transaction ID that was not ordered by the leader
 	//and justifies this suspicion (while will lead to a view change)

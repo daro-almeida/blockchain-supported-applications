@@ -13,6 +13,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 
+import consensus.notifications.InitializedNotification;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -25,9 +26,9 @@ import consensus.notifications.ViewChange;
 import consensus.requests.ProposeRequest;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
+import pt.unl.fct.di.novasys.babel.generic.ProtoNotification;
 import pt.unl.fct.di.novasys.network.data.Host;
-import utils.Crypto;
-import utils.SignaturesHelper;
+import utils.*;
 
 import javax.management.RuntimeErrorException;
 
@@ -35,56 +36,30 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private static final String PROTO_NAME = "blockchain";
 	private static final short PROTO_ID = 200;
-	
-	public static final String ADDRESS_KEY = "address";
-	public static final String PORT_KEY = "base_port";
-	public static final String INITIAL_MEMBERSHIP_KEY = "initial_membership";
-	
+
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_timeout";
 	public static final String SUSPECT_LEADER_TIMEOUT = "leader_timeout";
 	
 	private static final Logger logger = LogManager.getLogger(BlockChainProtocol.class);
 	
-	private String cryptoName;
-	private KeyStore truststore;
 	private PrivateKey key;
 	
 	private final long checkRequestsPeriod;
 	private final long leaderTimeout;
  	
-	private Host self;
-	private int viewNumber;
-	private final List<Host> view;
-	private boolean leader;
-	
+	private Node self;
+	private View view;
+
 	public BlockChainProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
 
-		//Probably the following informations could be provided by a notification
-		//emitted by the PBFTProtocol
-		//(this should not be interpreted as the unique or canonical solution)
-		self = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
-				Integer.parseInt(props.getProperty(PORT_KEY)));
-		
-		viewNumber = 0;
-		view = new LinkedList<>();
-		
 		//Read timers and timeouts configurations
-		checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
-		leaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
+		this.checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
+		this.leaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
 	}
 
 	@Override
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
-		try {
-			cryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
-			truststore = Crypto.getTruststore(props);
-			key = Crypto.getPrivateKey(cryptoName, props);
-		} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException | CertificateException
-				| IOException e) {
-			throw new RuntimeException(e);
-		}
-		
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
 		
 		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID, this::handleCheckUnhandledRequestsPeriodicTimer);
@@ -92,33 +67,34 @@ public class BlockChainProtocol extends GenericProtocol {
 		
 		subscribeNotification(ViewChange.NOTIFICATION_ID, this::handleViewChangeNotification);
 		subscribeNotification(CommittedNotification.NOTIFICATION_ID, this::handleCommittedNotification);
-		
+		subscribeNotification(InitializedNotification.NOTIFICATION_ID, this::handleInitializedNotification);
+
 		setupPeriodicTimer(new CheckUnhandledRequestsPeriodicTimer(), checkRequestsPeriod, checkRequestsPeriod);
 	}
-	
-	
+
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ---------------------------------------------- REQUEST HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     
 	public void handleClientRequest(ClientRequest req, short protoID) {
-		logger.info("Received a ClientRequeest with id: " + req.getRequestId());
+		assert this.view != null;
 		
-		if(this.leader) {
-			
+		if(this.view.getPrimary().equals(this.self)) {
 			try {
-				//TODO: This is a super over simplification we will handle latter
+				//TODO: This is a super over simplification we will handle later
 				//Only one block should be submitted for agreement at a time
 				//Also this assumes that a block only contains a single client request
 				byte[] request = req.generateByteRepresentation();
 				byte[] signature = SignaturesHelper.generateSignature(request, this.key);
-				
-				sendRequest(new ProposeRequest(request, signature), PBFTProtocol.PROTO_ID);
+
+				var propose = new ProposeRequest(request, signature);
+				logger.info("Sending ProposeRequest with digest: " + Utils.bytesToHex(propose.getDigest()));
+				sendRequest(propose, PBFTProtocol.PROTO_ID);
 			} catch (Exception e) {
 				throw new RuntimeException(e);
 			}
 		} else {
-			//TODO: Redirect this request to the leader via a specialized message
+			//TODO: Redirect this request to the leader via a specialized message (not sure if we can do this now :) )
 		}
 	}
 	
@@ -126,21 +102,26 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ------------------------------------------- NOTIFICATION HANDLER --------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     
-	public void handleViewChangeNotification(ViewChange vc, short from) {
-		logger.info("New view received (" + vc.getViewNumber() + ")");
+	public void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
+		logger.info("New view received (" + notif.getViewNumber() + ")");
 
 		//TODO NOW
 		//TODO: Should maybe validate this ViewChange :)
-		
-		this.viewNumber = vc.getViewNumber();
-		this.view.clear();
-		this.view.addAll(vc.getView());
-		//this.leader = true;
-		
+
+		//update view (?) not sure because pbft and blockchain should share same reference to view
+
 	}
 	
-	public void handleCommittedNotification(CommittedNotification cn, short from) {
+	public void handleCommittedNotification(CommittedNotification notif, short protoID) {
+		var digest = new ProposeRequest(notif.getBlock(), notif.getSignature()).getDigest();
+		logger.info("Committed operation with digest: " + Utils.bytesToHex(digest));
 		//TODO: write this handler
+	}
+
+	private void handleInitializedNotification(InitializedNotification notif, short protoID) {
+		this.self = notif.getSelf();
+		this.key = notif.getKey();
+		this.view = notif.getView();
 	}
 	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
@@ -164,7 +145,9 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     public void submitClientOperation(byte[] b) {
-    	sendRequest(new ClientRequest(b), BlockChainProtocol.PROTO_ID);
+		assert view != null;
+
+		sendRequest(new ClientRequest(b), BlockChainProtocol.PROTO_ID);
     }
 
 }

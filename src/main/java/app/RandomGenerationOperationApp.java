@@ -68,9 +68,9 @@ public class RandomGenerationOperationApp {
         babel.start();
         logger.info("Babel has started...");
 
-        logger.info("Waiting 10s to start issuing requests.");
+        logger.info("Waiting 2s to start issuing requests.");
 
-        try { Thread.sleep(10 * 1000); } catch (InterruptedException e1) { }
+        try { Thread.sleep(2 * 1000); } catch (InterruptedException e1) { }
 
         Thread t = new Thread(new Runnable() {
 
@@ -78,7 +78,7 @@ public class RandomGenerationOperationApp {
             public void run() {
                 while(true) {
                     try {
-                        logger.info("Generating random request.");
+                        logger.trace("Generating random request.");
 
                         byte[] block = new byte[RandomGenerationOperationApp.operation_size];
                         r.nextBytes(block);

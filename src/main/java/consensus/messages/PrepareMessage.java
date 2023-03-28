@@ -15,10 +15,19 @@ public class PrepareMessage extends SignedProtoMessage {
 
 	private final int viewNumber, seq;
 	private final byte[] digest;
-	private final String cryptoName;
+	private final int nodeId;
 
-	public String getCryptoName() {
-		return cryptoName;
+	public PrepareMessage(PrePrepareMessage msg, int nodeId) {
+		this(msg.getViewNumber(), msg.getSeq(), msg.getDigest(), nodeId);
+
+	}
+
+	public PrepareMessage(int viewNumber, int seq, byte[] digest, int nodeId) {
+		super(PrepareMessage.MESSAGE_ID);
+		this.viewNumber = viewNumber;
+		this.seq = seq;
+		this.digest = digest;
+		this.nodeId = nodeId;
 	}
 
 	public int getViewNumber() {
@@ -33,17 +42,8 @@ public class PrepareMessage extends SignedProtoMessage {
 		return digest;
 	}
 
-	public PrepareMessage(PrePrepareMessage msg, String cryptoName) {
-		this(msg.getViewNumber(), msg.getSeq(), msg.getDigest(), cryptoName);
-
-	}
-
-	public PrepareMessage(int viewNumber, int seq, byte[] digest, String cryptoName) {
-		super(PrepareMessage.MESSAGE_ID);
-		this.viewNumber = viewNumber;
-		this.seq = seq;
-		this.digest = digest;
-		this.cryptoName= cryptoName;
+	public int getNodeId() {
+		return nodeId;
 	}
 
 	public static final SignedMessageSerializer<PrepareMessage> serializer = new SignedMessageSerializer<PrepareMessage>() {
@@ -53,7 +53,7 @@ public class PrepareMessage extends SignedProtoMessage {
 			out.writeInt(signedProtoMessage.viewNumber);
             out.writeInt(signedProtoMessage.seq);
             Utils.byteArraySerializer.serialize(signedProtoMessage.digest, out);
-            Utils.stringSerializer.serialize(signedProtoMessage.cryptoName, out);
+            out.writeInt(signedProtoMessage.nodeId);
 			
 		}
 
@@ -62,8 +62,8 @@ public class PrepareMessage extends SignedProtoMessage {
 			int viewN = in.readInt();
 			int seq = in.readInt();
 			byte[] digest = Utils.byteArraySerializer.deserialize(in);
-			String cryptoName = Utils.stringSerializer.deserialize(in);
-			return new PrepareMessage(viewN, seq, digest, cryptoName);
+			int nodeId = in.readInt();
+			return new PrepareMessage(viewN, seq, digest, nodeId);
 		}
 	};
 
@@ -77,12 +77,12 @@ public class PrepareMessage extends SignedProtoMessage {
 		if (this == o) return true;
 		if (o == null || getClass() != o.getClass()) return false;
 		PrepareMessage that = (PrepareMessage) o;
-		return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && Arrays.equals(getDigest(), that.getDigest()) && getCryptoName().equals(that.getCryptoName());
+		return getViewNumber() == that.getViewNumber() && getSeq() == that.getSeq() && getNodeId() == that.getNodeId() && Arrays.equals(getDigest(), that.getDigest());
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(getViewNumber(), getSeq(), getCryptoName());
+		int result = Objects.hash(getViewNumber(), getSeq(), getNodeId());
 		result = 31 * result + Arrays.hashCode(getDigest());
 		return result;
 	}
