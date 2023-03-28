@@ -73,7 +73,7 @@ public class PBFTProtocol extends GenericProtocol {
         var selfCryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
         try {
             var truststore = Crypto.getTruststore(props);
-            this.self = new Node(id, selfHost, selfCryptoName, truststore.getCertificate(selfCryptoName).getPublicKey());
+            this.self = new Node(id, selfHost, truststore.getCertificate(selfCryptoName).getPublicKey());
             this.key = Crypto.getPrivateKey(selfCryptoName, props);
 
             String[] membership = props.getProperty(INITIAL_MEMBERSHIP_KEY).split(",");
@@ -86,7 +86,7 @@ public class PBFTProtocol extends GenericProtocol {
                     nodeList.add(self);
                 else {
                     var cryptoName = Crypto.CRYPTO_NAME_PREFIX + i;
-                    nodeList.add(new Node(i, host, cryptoName, truststore.getCertificate(cryptoName).getPublicKey()));
+                    nodeList.add(new Node(i, host, truststore.getCertificate(cryptoName).getPublicKey()));
                 }
             }
             var primaryId = Integer.parseInt(props.getProperty(BOOTSTRAP_PRIMARY_ID_KEY));

@@ -5,7 +5,7 @@ import pt.unl.fct.di.novasys.network.data.Host;
 import java.security.PublicKey;
 import java.util.Objects;
 
-public record Node(int id, Host host, String cryptoName, PublicKey publicKey) {
+public record Node(int id, Host host, PublicKey publicKey) {
 
     @Override
     public boolean equals(Object o) {
