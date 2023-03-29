@@ -133,9 +133,6 @@ public class PBFTProtocol extends GenericProtocol {
         }
 
         view.forEach(node -> openConnection(node.host()));
-
-        //Installing first view
-        //triggerNotification(new ViewChange(view, viewNumber));
     }
 
     // --------------------------------------- Auxiliary Functions -----------------------------------

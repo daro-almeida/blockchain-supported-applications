@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Properties;
 
 import consensus.notifications.InitializedNotification;
+import consensus.requests.SuspectLeader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -138,7 +139,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 	
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
-		//TODO NOW
+		sendRequest(new SuspectLeader(t.getRequestID()), PBFTProtocol.PROTO_ID);
 	}
 	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */

@@ -16,7 +16,7 @@ public class ViewChange extends ProtoNotification {
 	
 	public ViewChange(View view) {
 		super(ViewChange.NOTIFICATION_ID);
-		this.view = view;
+		this.view = new View(view);
 	}
 
 	public View getView() {

@@ -18,7 +18,7 @@ public class InitializedNotification extends ProtoNotification {
         super(NOTIFICATION_ID);
         this.self = self;
         this.key = key;
-        this.view = view;
+        this.view = new View(view);
     }
 
     public Node getSelf() {

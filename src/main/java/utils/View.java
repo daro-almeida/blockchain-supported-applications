@@ -18,6 +18,12 @@ public class View implements Iterable<Node> {
         }
     }
 
+    public View(View view) {
+        this.viewNumber = view.viewNumber;
+        this.primary = view.primary;
+        this.nodes = new HashMap<>(view.nodes);
+    }
+
     public int getViewNumber() {
         return viewNumber;
     }
