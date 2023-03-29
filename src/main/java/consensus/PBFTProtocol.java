@@ -143,6 +143,12 @@ public class PBFTProtocol extends GenericProtocol {
             var request = prePrepare.getRequest();
             triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
             logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
+
+            // removing messages related to this commit from logs, still don't know for now if we might need them later
+            prePreparesLog.remove(nextToExecute);
+            preparesLog.remove(nextToExecute);
+            commitsLog.remove(nextToExecute);
+
             prePrepare = prePreparesLog.get(++nextToExecute);
         }
     }
@@ -289,9 +295,8 @@ public class PBFTProtocol extends GenericProtocol {
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
         logger.trace("Received PrepareMessage: " + msg.getSeq() + " from " + msg.getNodeId());
-        if (!validatePrepare(msg))
+        if (!validatePrepare(msg) || sentCommits.contains(msg.getSeq()))
             return;
-        if (sentCommits.contains(msg.getSeq())) return;
 
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
         var prePrepare = prePreparesLog.get(msg.getSeq());
@@ -311,7 +316,7 @@ public class PBFTProtocol extends GenericProtocol {
     private void uponCommitMessage(CommitMessage msg, Host sender, short sourceProtocol, int channelId) {
         logger.trace("Received CommitMessage: " + msg.getSeq() + " from " + msg.getNodeId());
 
-        if (!validateCommit(msg))
+        if (!validateCommit(msg) || msg.getSeq() < nextToExecute)
             return;
 
         commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
