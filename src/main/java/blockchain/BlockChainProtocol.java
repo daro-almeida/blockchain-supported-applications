@@ -103,7 +103,7 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     
 	public void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
-		logger.info("New view received (" + notif.getViewNumber() + ")");
+		logger.info("New view change (" + notif.getView().getViewNumber() + ") primary: node" + notif.getView().getPrimary().id());
 
 		//TODO NOW
 		//TODO: Should maybe validate this ViewChange :)
