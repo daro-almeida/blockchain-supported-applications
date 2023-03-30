@@ -269,8 +269,14 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
-        //TODO NOW
+        //TODO not sure in the order or correctness of this:
+        // 1. send ViewChangeMessage (not made yet) to all other replicas
+        // 2. take care of pending operations of current view so they're not discarded (thought in lecture) (might be
+        // done when receiving ViewChangeMessage)
+        // 3. calculate new leader (next in id order something like (id = prevId + 1 % view.size)), update view, then
+        // send ViewChanged to blockchain (might also not be this method that does this)
 
+        // for now doing just 3. is easy and good enough :)
     }
 
 

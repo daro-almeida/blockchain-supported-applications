@@ -6,6 +6,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
+import pt.unl.fct.di.novasys.network.ISerializer;
 
 public class ClientRequest extends ProtoRequest {
 
@@ -35,7 +36,7 @@ public class ClientRequest extends ProtoRequest {
 		return operation;
 	}
 	
-	static ClientRequest fromBytes(byte[] b) {
+	public static ClientRequest fromBytes(byte[] b) {
 		ByteBuf bb = Unpooled.wrappedBuffer(b);
 		UUID id = new UUID(bb.readLong(), bb.readLong());
 		short s = bb.readShort();
@@ -52,6 +53,4 @@ public class ClientRequest extends ProtoRequest {
 		bb.writeBytes(this.operation);
 		return ByteBufUtil.getBytes(bb);
 	}
-	
-	
 }
