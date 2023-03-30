@@ -3,10 +3,12 @@ package blockchain;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.InvalidKeyException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.SignatureException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.LinkedList;
@@ -33,6 +35,7 @@ import consensus.requests.ProposeRequest;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoNotification;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.*;
 
@@ -45,14 +48,14 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_timeout";
 	public static final String SUSPECT_LEADER_TIMEOUT = "leader_timeout";
-
+	
 	private static final Logger logger = LogManager.getLogger(BlockChainProtocol.class);
-
+	
 	private PrivateKey key;
-
+	
 	private final long checkRequestsPeriod;
 	private final long leaderTimeout;
-
+ 	
 	private Node self;
 	private View view;
 
@@ -71,7 +74,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID, this::handleCheckUnhandledRequestsPeriodicTimer);
 		registerTimerHandler(LeaderSuspectTimer.TIMER_ID, this::handleLeaderSuspectTimer);
-
+		
 		subscribeNotification(ViewChange.NOTIFICATION_ID, this::handleViewChangeNotification);
 		subscribeNotification(CommittedNotification.NOTIFICATION_ID, this::handleCommittedNotification);
 		subscribeNotification(InitializedNotification.NOTIFICATION_ID, this::handleInitializedNotification);
@@ -82,17 +85,31 @@ public class BlockChainProtocol extends GenericProtocol {
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ---------------------------------------------- REQUEST HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-
+    
 	public void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
-
+		
+		byte[] request = req.generateByteRepresentation();
+		byte[] signature = null;
+		try {
+			signature = SignaturesHelper.generateSignature(request, this.key);
+		} catch (InvalidKeyException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NoSuchAlgorithmException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (SignatureException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
 		if(this.view.getPrimary().equals(this.self)) {
 			try {
 				//TODO: This is a super over simplification we will handle later
 				//Only one block should be submitted for agreement at a time
 				//Also this assumes that a block only contains a single client request
-				byte[] request = req.generateByteRepresentation();
-				byte[] signature = SignaturesHelper.generateSignature(request, this.key);
+				
 
 				var propose = new ProposeRequest(request, signature);
 				logger.info("Sending ProposeRequest with digest: " + Utils.bytesToHex(propose.getDigest()));
@@ -102,16 +119,31 @@ public class BlockChainProtocol extends GenericProtocol {
 			}
 		} else {
 			Node node = this.view.getPrimary();
-			RedirectClientRequestMessage message = new RedirectClientRequestMessage();
+			RedirectClientRequestMessage message = new RedirectClientRequestMessage(req.getRequestId(), request, this.self.id(), signature);
+			try {
+				message.signMessage(key);
+			} catch (InvalidKeyException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (NoSuchAlgorithmException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (SignatureException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (InvalidSerializerException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 			sendMessage(message, node.host());
 			//TODO: Redirect this request to the leader via a specialized message (not sure if we can do this now :) )
 		}
 	}
-
+	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ------------------------------------------- NOTIFICATION HANDLER --------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-
+    
 	public void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
 		logger.info("New view change (" + notif.getView().getViewNumber() + ") primary: node" + notif.getView().getPrimary().id());
 
@@ -121,7 +153,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		//update view (?) not sure because pbft and blockchain should share same reference to view
 
 	}
-
+	
 	public void handleCommittedNotification(CommittedNotification notif, short protoID) {
 		var digest = new ProposeRequest(notif.getBlock(), notif.getSignature()).getDigest();
 		logger.info("Committed operation with digest: " + Utils.bytesToHex(digest));
@@ -147,11 +179,11 @@ public class BlockChainProtocol extends GenericProtocol {
 		registerMessageSerializer(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, RedirectClientRequestMessage.serializer);
 		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, StartClientRequestSuspectMessage.serializer);
 	}
-
+	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ---------------------------------------------- MESSAGE HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-
+    
 	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
 
 	}
@@ -167,15 +199,15 @@ public class BlockChainProtocol extends GenericProtocol {
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- TIMER HANDLER ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-
+    
 	public void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
 		//TODO NOW maybe
 	}
-
+	
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
 		sendRequest(new SuspectLeader(t.getRequestID()), PBFTProtocol.PROTO_ID);
 	}
-
+	
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
