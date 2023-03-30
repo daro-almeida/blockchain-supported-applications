@@ -22,6 +22,7 @@ import consensus.requests.SuspectLeader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.requests.ClientRequest;
 import blockchain.timers.CheckUnhandledRequestsPeriodicTimer;
 import blockchain.timers.LeaderSuspectTimer;
@@ -65,6 +66,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	@Override
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
+
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
 
 		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID, this::handleCheckUnhandledRequestsPeriodicTimer);
@@ -99,6 +101,9 @@ public class BlockChainProtocol extends GenericProtocol {
 				throw new RuntimeException(e);
 			}
 		} else {
+			Node node = this.view.getPrimary();
+			RedirectClientRequestMessage message = new RedirectClientRequestMessage();
+			sendMessage(message, node.host());
 			//TODO: Redirect this request to the leader via a specialized message (not sure if we can do this now :) )
 		}
 	}
