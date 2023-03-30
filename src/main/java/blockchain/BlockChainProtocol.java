@@ -13,6 +13,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 
+import blockchain.messages.ClientRequestUnhandledMessage;
+import blockchain.messages.RedirectClientRequestMessage;
+import blockchain.messages.StartClientRequestSuspectMessage;
+import consensus.messages.PrePrepareMessage;
 import consensus.notifications.InitializedNotification;
 import consensus.requests.SuspectLeader;
 import org.apache.logging.log4j.LogManager;
@@ -40,14 +44,14 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_timeout";
 	public static final String SUSPECT_LEADER_TIMEOUT = "leader_timeout";
-	
+
 	private static final Logger logger = LogManager.getLogger(BlockChainProtocol.class);
-	
+
 	private PrivateKey key;
-	
+
 	private final long checkRequestsPeriod;
 	private final long leaderTimeout;
- 	
+
 	private Node self;
 	private View view;
 
@@ -62,10 +66,10 @@ public class BlockChainProtocol extends GenericProtocol {
 	@Override
 	public void init(Properties props) throws HandlerRegistrationException, IOException {
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
-		
+
 		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID, this::handleCheckUnhandledRequestsPeriodicTimer);
 		registerTimerHandler(LeaderSuspectTimer.TIMER_ID, this::handleLeaderSuspectTimer);
-		
+
 		subscribeNotification(ViewChange.NOTIFICATION_ID, this::handleViewChangeNotification);
 		subscribeNotification(CommittedNotification.NOTIFICATION_ID, this::handleCommittedNotification);
 		subscribeNotification(InitializedNotification.NOTIFICATION_ID, this::handleInitializedNotification);
@@ -76,10 +80,10 @@ public class BlockChainProtocol extends GenericProtocol {
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ---------------------------------------------- REQUEST HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-    
+
 	public void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
-		
+
 		if(this.view.getPrimary().equals(this.self)) {
 			try {
 				//TODO: This is a super over simplification we will handle later
@@ -98,11 +102,11 @@ public class BlockChainProtocol extends GenericProtocol {
 			//TODO: Redirect this request to the leader via a specialized message (not sure if we can do this now :) )
 		}
 	}
-	
+
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ------------------------------------------- NOTIFICATION HANDLER --------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-    
+
 	public void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
 		logger.info("New view change (" + notif.getView().getViewNumber() + ") primary: node" + notif.getView().getPrimary().id());
 
@@ -112,7 +116,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		//update view (?) not sure because pbft and blockchain should share same reference to view
 
 	}
-	
+
 	public void handleCommittedNotification(CommittedNotification notif, short protoID) {
 		var digest = new ProposeRequest(notif.getBlock(), notif.getSignature()).getDigest();
 		logger.info("Committed operation with digest: " + Utils.bytesToHex(digest));
@@ -123,25 +127,50 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.self = notif.getSelf();
 		this.key = notif.getKey();
 		this.view = notif.getView();
+
+		var peerChannel = notif.getPeerChannel();
+
+		registerSharedChannel(peerChannel);
+		try {
+			registerMessageHandler(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, this::handleClientRequestUnhandledMessage);
+			registerMessageHandler(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, this::handleRedirectClientRequestMessage);
+			registerMessageHandler(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, this::handleStartClientRequestSuspectMessage);
+		} catch (HandlerRegistrationException e) {
+			throw new RuntimeException(e);
+		}
+		registerMessageSerializer(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, ClientRequestUnhandledMessage.serializer);
+		registerMessageSerializer(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, RedirectClientRequestMessage.serializer);
+		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, StartClientRequestSuspectMessage.serializer);
 	}
-	
+
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ---------------------------------------------- MESSAGE HANDLER ----------------------------------------- */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-    
+
+	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
+
+	}
+
+	public void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol, int channelId) {
+
+	}
+
+	public void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender, short sourceProtocol, int channelId) {
+
+	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- TIMER HANDLER ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */
-    
+
 	public void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
 		//TODO NOW maybe
 	}
-	
+
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
 		sendRequest(new SuspectLeader(t.getRequestID()), PBFTProtocol.PROTO_ID);
 	}
-	
+
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
     /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
     /* ----------------------------------------------- ------------- ------------------------------------------ */

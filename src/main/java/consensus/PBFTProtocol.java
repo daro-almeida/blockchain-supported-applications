@@ -125,14 +125,15 @@ public class PBFTProtocol extends GenericProtocol {
         registerChannelEventHandler(peerChannel, OutConnectionUp.EVENT_ID, this::uponOutConnectionUp);
         registerChannelEventHandler(peerChannel, OutConnectionFailed.EVENT_ID, this::uponOutConnectionFailed);
 
-        triggerNotification(new InitializedNotification(this.self, this.key, this.view));
-
         try {
             Thread.sleep(5 * 1000);
         } catch (InterruptedException ignored) {
         }
 
         view.forEach(node -> openConnection(node.host()));
+
+        triggerNotification(new InitializedNotification(peerChannel, this.self, this.key, this.view));
+
     }
 
     // --------------------------------------- Auxiliary Functions -----------------------------------

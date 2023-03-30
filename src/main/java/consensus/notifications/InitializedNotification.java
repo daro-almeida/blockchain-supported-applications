@@ -10,12 +10,14 @@ public class InitializedNotification extends ProtoNotification {
 
     public static final short NOTIFICATION_ID = 103;
 
+    private final int peerChannel;
     private final Node self;
     private final PrivateKey key;
     private final View view;
 
-    public InitializedNotification(Node self, PrivateKey key, View view) {
+    public InitializedNotification(int peerChannel, Node self, PrivateKey key, View view) {
         super(NOTIFICATION_ID);
+        this.peerChannel = peerChannel;
         this.self = self;
         this.key = key;
         this.view = new View(view);
@@ -31,5 +33,9 @@ public class InitializedNotification extends ProtoNotification {
 
     public View getView() {
         return view;
+    }
+
+    public int getPeerChannel() {
+    	return peerChannel;
     }
 }
