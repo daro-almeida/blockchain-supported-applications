@@ -6,6 +6,7 @@ import pt.unl.fct.di.novasys.network.ISerializer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 public class Utils {
 
@@ -37,6 +38,19 @@ public class Utils {
             var bytes = new byte[len];
             byteBuf.readBytes(bytes);
             return bytes;
+        }
+    };
+
+    public static ISerializer<UUID> uuidSerializer = new ISerializer<UUID>() {
+        @Override
+        public void serialize(UUID uuid, ByteBuf byteBuf) throws IOException {
+            byteBuf.writeLong(uuid.getMostSignificantBits());
+            byteBuf.writeLong(uuid.getLeastSignificantBits());
+        }
+
+        @Override
+        public UUID deserialize(ByteBuf byteBuf) throws IOException {
+            return new UUID(byteBuf.readLong(), byteBuf.readLong());
         }
     };
 
