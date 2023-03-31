@@ -50,7 +50,9 @@ public class Utils {
 
         @Override
         public UUID deserialize(ByteBuf byteBuf) throws IOException {
-            return new UUID(byteBuf.readLong(), byteBuf.readLong());
+            var mostSigBits = byteBuf.readLong();
+            var leastSigBits = byteBuf.readLong();
+            return new UUID(mostSigBits, leastSigBits);
         }
     };
 

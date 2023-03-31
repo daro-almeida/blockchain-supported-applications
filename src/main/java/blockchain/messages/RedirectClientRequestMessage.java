@@ -13,13 +13,13 @@ public class RedirectClientRequestMessage extends SignedProtoMessage {
 	public final static short MESSAGE_ID = 201;
 	
 	private final ClientRequest request;
-	private final byte[] signature; // this is the request's signature signed by the client
+	private final byte[] requestSignature; // this is the request's signature signed by the client
 	private final int nodeId;
 
-	public RedirectClientRequestMessage(ClientRequest request, byte[] signature, int nodeId) {
+	public RedirectClientRequestMessage(ClientRequest request, byte[] requestSignature, int nodeId) {
 		super(RedirectClientRequestMessage.MESSAGE_ID);
 		this.request = request;
-		this.signature = signature;
+		this.requestSignature = requestSignature;
 		this.nodeId = nodeId;
 	}
 
@@ -27,8 +27,8 @@ public class RedirectClientRequestMessage extends SignedProtoMessage {
 		return request;
 	}
 
-	public byte[] getSignature() {
-		return signature;
+	public byte[] getRequestSignature() {
+		return requestSignature;
 	}
 
 	public int getNodeId() {
@@ -40,7 +40,7 @@ public class RedirectClientRequestMessage extends SignedProtoMessage {
 		@Override
 		public void serializeBody(RedirectClientRequestMessage protoMessage, ByteBuf out) throws IOException {
 			Utils.byteArraySerializer.serialize(protoMessage.request.generateByteRepresentation(), out);
-			Utils.byteArraySerializer.serialize(protoMessage.signature, out);
+			Utils.byteArraySerializer.serialize(protoMessage.requestSignature, out);
 			out.writeInt(protoMessage.nodeId);
 		}
 

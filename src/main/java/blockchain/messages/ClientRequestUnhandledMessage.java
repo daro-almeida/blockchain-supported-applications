@@ -8,19 +8,18 @@ import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import utils.Utils;
 
-//TODO implement this message
 public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 
 	public final static short MESSAGE_ID = 202;
 
 	private final ClientRequest request;
-	private final byte[] signature; // this is the request's signature signed by the client
+	private final byte[] requestSignature; // this is the request's signature signed by the client
 	private final int nodeId;
 
-	public ClientRequestUnhandledMessage(ClientRequest request, byte[] signature, int nodeId) {
+	public ClientRequestUnhandledMessage(ClientRequest request, byte[] requestSignature, int nodeId) {
 		super(ClientRequestUnhandledMessage.MESSAGE_ID);
 		this.request = request;
-		this.signature = signature;
+		this.requestSignature = requestSignature;
 		this.nodeId = nodeId;
 	}
 
@@ -28,8 +27,8 @@ public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 		return request;
 	}
 
-	public byte[] getSignature() {
-		return signature;
+	public byte[] getRequestSignature() {
+		return requestSignature;
 	}
 
 	public int getNodeId() {
@@ -41,7 +40,7 @@ public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 		@Override
 		public void serializeBody(ClientRequestUnhandledMessage protoMessage, ByteBuf out) throws IOException {
 			Utils.byteArraySerializer.serialize(protoMessage.request.generateByteRepresentation(), out);
-			Utils.byteArraySerializer.serialize(protoMessage.signature, out);
+			Utils.byteArraySerializer.serialize(protoMessage.requestSignature, out);
 			out.writeInt(protoMessage.nodeId);
 
 		}
