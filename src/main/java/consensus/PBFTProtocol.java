@@ -136,85 +136,6 @@ public class PBFTProtocol extends GenericProtocol {
 
     }
 
-    // --------------------------------------- Auxiliary Functions -----------------------------------
-
-    private void commitRequests() {
-        var prePrepare = prePreparesLog.get(nextToExecute);
-        while (prePrepare != null && committed(view.getViewNumber(), nextToExecute)) {
-            var request = prePrepare.getRequest();
-            triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
-            logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
-
-            // removing messages related to this commit from logs, still don't know for now if we might need them later
-            prePreparesLog.remove(nextToExecute);
-            preparesLog.remove(nextToExecute);
-            commitsLog.remove(nextToExecute);
-
-            prePrepare = prePreparesLog.get(++nextToExecute);
-        }
-    }
-
-    private boolean validatePrePrepare(PrePrepareMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (prePreparesLog.containsKey(msg.getSeq())) {
-                logger.warn("PrePrepareMessage already exists: " + msg.getSeq());
-                return false;
-            }
-            if (!Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
-                logger.warn("PrePrepareMessage: Digests don't match: seq=" + msg.getSeq() + ": " +
-                        Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
-                return false;
-            }
-            if (!msg.checkSignature(view.getPrimary().publicKey())) {
-                logger.warn("PrePrepareMessage: Invalid signature: " + msg.getSeq());
-                return false;
-            }
-        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean validatePrepare(PrepareMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-                logger.warn("PrepareMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
-                return false;
-            }
-        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException | InvalidFormatException |
-                 NoSignaturePresentException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean validateCommit(CommitMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-                logger.warn("CommitMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
-                return false;
-            }
-        } catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException
-                 | InvalidKeyException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
 
     // --------------------------------------- Predicates -----------------------------------
 
@@ -359,4 +280,83 @@ public class PBFTProtocol extends GenericProtocol {
         logger.warn(event);
     }
 
+    // --------------------------------------- Auxiliary Functions -----------------------------------
+
+    private void commitRequests() {
+        var prePrepare = prePreparesLog.get(nextToExecute);
+        while (prePrepare != null && committed(view.getViewNumber(), nextToExecute)) {
+            var request = prePrepare.getRequest();
+            triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+            logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
+
+            // removing messages related to this commit from logs, still don't know for now if we might need them later
+            prePreparesLog.remove(nextToExecute);
+            preparesLog.remove(nextToExecute);
+            commitsLog.remove(nextToExecute);
+
+            prePrepare = prePreparesLog.get(++nextToExecute);
+        }
+    }
+
+    private boolean validatePrePrepare(PrePrepareMessage msg) {
+        try {
+            if (msg.getViewNumber() != view.getViewNumber()) {
+                logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+                return false;
+            }
+            if (prePreparesLog.containsKey(msg.getSeq())) {
+                logger.warn("PrePrepareMessage already exists: " + msg.getSeq());
+                return false;
+            }
+            if (!Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
+                logger.warn("PrePrepareMessage: Digests don't match: seq=" + msg.getSeq() + ": " +
+                        Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
+                return false;
+            }
+            if (!msg.checkSignature(view.getPrimary().publicKey())) {
+                logger.warn("PrePrepareMessage: Invalid signature: " + msg.getSeq());
+                return false;
+            }
+        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException e) {
+            logger.warn(e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePrepare(PrepareMessage msg) {
+        try {
+            if (msg.getViewNumber() != view.getViewNumber()) {
+                logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+                return false;
+            }
+            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
+                logger.warn("PrepareMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
+                return false;
+            }
+        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException | InvalidFormatException |
+                 NoSignaturePresentException e) {
+            logger.warn(e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateCommit(CommitMessage msg) {
+        try {
+            if (msg.getViewNumber() != view.getViewNumber()) {
+                logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+                return false;
+            }
+            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
+                logger.warn("CommitMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
+                return false;
+            }
+        } catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException
+                 | InvalidKeyException e) {
+            logger.warn(e.getMessage());
+            return false;
+        }
+        return true;
+    }
 }

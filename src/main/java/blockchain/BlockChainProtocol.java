@@ -83,7 +83,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		byte[] request = req.generateByteRepresentation();
 		byte[] signature;
 		try {
-			// FIXME request should be signed by client and not by this replica, but for now it's ok because teachers didn't implement this yet :)
+			//FIXME request should be signed by client and not by this replica, but for now it's ok because teachers didn't implement this yet :)
 			signature = SignaturesHelper.generateSignature(request, this.key);
 		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException e) {
 			throw new RuntimeException(e);
@@ -91,9 +91,9 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		if(this.view.getPrimary().equals(this.self)) {
 			//Only one block should be submitted for agreement at a time
-			// FIXME This assumes that a block only contains a single client request, okay for now implement many requests per block later
+			//FIXME This assumes that a block only contains a single client request, okay for now implement many requests per block later
 			var propose = new ProposeRequest(request, signature);
-			logger.info("Sending ProposeRequest with digest: " + Utils.bytesToHex(propose.getDigest()));
+			logger.info("Proposing operation: " + req.getRequestId());
 			sendRequest(propose, PBFTProtocol.PROTO_ID);
 		} else {
 			var message = new RedirectClientRequestMessage(req, signature, this.self.id());
@@ -120,8 +120,9 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	public void handleCommittedNotification(CommittedNotification notif, short protoID) {
-		var digest = new ProposeRequest(notif.getBlock(), notif.getSignature()).getDigest();
-		logger.info("Committed operation with digest: " + Utils.bytesToHex(digest));
+		//FIXME assuming blocks are one request for now
+		var request = ClientRequest.fromBytes(notif.getBlock());
+		logger.info("Committed operation: " + request.getRequestId());
 	}
 
 	private void handleInitializedNotification(InitializedNotification notif, short protoID) {
@@ -151,33 +152,34 @@ public class BlockChainProtocol extends GenericProtocol {
 	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
 
 
-
-		
-		// TODO check signatures (message and request), if valid and if the request is not in the chain send
+		//TODO check signatures (message and request), if valid and if the request is not in the chain send
 		// StartClientRequestSuspectMessage to all replicas (including self)
-		// FIXME for now can't check request signature (signed by the client) and checking the blockchain
+		//FIXME for now can't check request signature (signed by the client) and checking the blockchain
 	}
 
 	public void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol, int channelId) {
+			byte[] request = msg.getRequest().generateByteRepresentation();
+			byte[] signature = msg.getRequestSignature();
 
-
-		try {
-			if(msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
-				byte[] request = msg.getRequest().generateByteRepresentation();
-				byte[] signature = msg.getRequestSignature();
-		
-				var propose = new ProposeRequest(request, signature);
-				logger.info("Sending ProposeRequest to PBFT with digest: " + Utils.bytesToHex(propose.getDigest()));
-				sendRequest(propose, PBFTProtocol.PROTO_ID);
+			try {
+				if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
+					logger.warn("RedirectClientRequestMessage: Invalid signature: " + msg.getNodeId());
+					return;
+				}
+				//FIXME for now can't check request signature (signed by the client)
+				if(!SignaturesHelper.checkSignature(request, signature, view.getNode(msg.getNodeId()).publicKey())) {
+					logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
+					return;
+				}
+			} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+						| NoSignaturePresentException e) {
+				logger.warn(e.getMessage());
+				return;
 			}
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			e.printStackTrace();
-		}
-		
 
-		// TODO check signatures (message and request), if valid propose request to pbft
-		// FIXME for now can't check request signature (signed by the client)
+			var propose = new ProposeRequest(request, signature);
+			logger.info("Proposing operation: " + msg.getRequest().getRequestId());
+			sendRequest(propose, PBFTProtocol.PROTO_ID);
 	}
 
 	public void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender, short sourceProtocol, int channelId) {
