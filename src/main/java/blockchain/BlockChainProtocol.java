@@ -16,7 +16,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
+import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Node;
 import utils.SignaturesHelper;
@@ -153,7 +155,23 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	public void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol, int channelId) {
-		// TODO check signatures (message and request), if valid propose request to pbft
+
+
+		try {
+			if(msg.checkSignature(view.getPrimary().publicKey())){
+				byte[] request = msg.getRequest().generateByteRepresentation();
+				byte[] signature = msg.getRequestSignature();
+		
+				var propose = new ProposeRequest(request, signature);
+				logger.info("Sending ProposeRequest to PBFT with digest: " + Utils.bytesToHex(propose.getDigest()));
+				sendRequest(propose, PBFTProtocol.PROTO_ID);
+			}
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			e.printStackTrace();
+		}
+		
+
 		// FIXME for now can't check request signature (signed by the client)
 	}
 
