@@ -7,6 +7,7 @@ import consensus.notifications.CommittedNotification;
 import consensus.notifications.InitializedNotification;
 import consensus.requests.ProposeRequest;
 import consensus.requests.SuspectLeader;
+import consensus.utils.PBFTPredicates;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
@@ -97,6 +98,7 @@ public class PBFTProtocol extends GenericProtocol {
         }
 
         this.f = (view.size() - 1) / 3;
+        assert this.f > 0;
     }
 
     @Override
@@ -139,33 +141,7 @@ public class PBFTProtocol extends GenericProtocol {
 
     // --------------------------------------- Predicates -----------------------------------
 
-    /*
-     * We define the predicate prepared(m,v,n,i) to be true if and only if replica i has inserted in its log: the
-     * request m, a pre-prepare for m in view v with sequence number n, and 2f prepares from different backups that
-     * match the pre-prepare.
-     */
-    private boolean prepared(int v, int n) {
-        var prePrepare = prePreparesLog.get(n);
-        var prepares = preparesLog.get(n);
-        //TODO not optimal but works, fix later
-        return prePrepare != null && prePrepare.getViewNumber() == v && prepares != null && prepares.size() >= 2 * f + 1 &&
-                prepares.stream().filter(prepare -> prepare.getViewNumber() == v && prepare.getSeq() == n &&
-                        Arrays.equals(prepare.getDigest(), prePrepare.getDigest())).count() >= 2L * f + 1;
-        // 2f + 1 because it includes the pre-prepare from the primary
-    }
 
-    /*
-     * true if and only if prepared(m,v,n,i) is true and has accepted 2f + 1 commits (possibly including its own) from
-     *  different replicas that match the pre-prepare for m; a commit matches a pre-prepare if they have the same view,
-     *  sequence number, and digest.
-     */
-    private boolean committed(int v, int n) {
-        var commits = commitsLog.get(n);
-        //TODO not optimal but works, fix later
-        return commits != null && prepared(v, n) && commits.size() >= 2 * f + 1 &&
-                commits.stream().filter(commit -> commit.getViewNumber() == v && commit.getSeq() == n &&
-                        Arrays.equals(commit.getDigest(), prePreparesLog.get(n).getDigest())).count() >= 2L * f + 1;
-    }
 
     // --------------------------------------- Request Handlers -----------------------------------
 
@@ -190,6 +166,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
+
         //TODO not sure in the order or correctness of this:
         // 1. send ViewChangeMessage (not made yet) to all other replicas
         // 2. take care of pending operations of current view so they're not discarded (thought in lecture) (might be
@@ -228,7 +205,8 @@ public class PBFTProtocol extends GenericProtocol {
 
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
         var prePrepare = prePreparesLog.get(msg.getSeq());
-        if (prePrepare != null && prepared(msg.getViewNumber(), msg.getSeq())) {
+        if (prePrepare != null && PBFTPredicates.prepared(msg.getViewNumber(), msg.getSeq(), this.f,
+                prePrepare, preparesLog.get(msg.getSeq()))) {
             var commitMessage = new CommitMessage(msg, this.self.id());
             try {
                 commitMessage.signMessage(key);
@@ -284,14 +262,15 @@ public class PBFTProtocol extends GenericProtocol {
 
     private void commitRequests() {
         var prePrepare = prePreparesLog.get(nextToExecute);
-        while (prePrepare != null && committed(view.getViewNumber(), nextToExecute)) {
+        while (prePrepare != null && PBFTPredicates.committed(view.getViewNumber(), nextToExecute, this.f,
+                prePrepare, preparesLog.get(nextToExecute), commitsLog.get(nextToExecute))) {
             var request = prePrepare.getRequest();
             triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
             logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
 
             // removing messages related to this commit from logs, still don't know for now if we might need them later
             prePreparesLog.remove(nextToExecute);
-            preparesLog.remove(nextToExecute);
+            //preparesLog.remove(nextToExecute);
             commitsLog.remove(nextToExecute);
 
             prePrepare = prePreparesLog.get(++nextToExecute);

@@ -178,26 +178,10 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	public void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol, int channelId) {
-			byte[] request = msg.getRequest().generateByteRepresentation();
-			byte[] signature = msg.getRequestSignature();
-
-			try {
-				if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-					logger.warn("RedirectClientRequestMessage: Invalid signature: " + msg.getNodeId());
-					return;
-				}
-				//FIXME for now can't check request signature (signed by the client)
-				if(!SignaturesHelper.checkSignature(request, signature, view.getNode(msg.getNodeId()).publicKey())) {
-					logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
-					return;
-				}
-			} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-						| NoSignaturePresentException e) {
-				logger.warn(e.getMessage());
+			if(!validateRedirectClientRequestMessage(msg))
 				return;
-			}
 
-			var propose = new ProposeRequest(request, signature);
+			var propose = new ProposeRequest(msg.getRequest().generateByteRepresentation(), msg.getRequestSignature());
 			logger.info("Proposing operation: " + msg.getRequest().getRequestId());
 			sendRequest(propose, PBFTProtocol.PROTO_ID);
 	}
@@ -239,6 +223,33 @@ public class BlockChainProtocol extends GenericProtocol {
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
 		//TODO check again if request is in the chain (not sure if this is necessary), if not send SuspectLeader to pbft
 		sendRequest(new SuspectLeader(t.getRequestID()), PBFTProtocol.PROTO_ID);
+	}
+
+	/* ----------------------------------------------- ------------- ------------------------------------------ */
+	/* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
+	/* ----------------------------------------------- ------------- ------------------------------------------ */
+
+	public boolean validateRedirectClientRequestMessage(RedirectClientRequestMessage msg) {
+		byte[] request = msg.getRequest().generateByteRepresentation();
+		byte[] signature = msg.getRequestSignature();
+
+		try {
+			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
+				logger.warn("RedirectClientRequestMessage: Invalid signature: " + msg.getNodeId());
+				return false;
+			}
+			//FIXME for now can't check request signature (signed by the client)
+			if(!SignaturesHelper.checkSignature(request, signature, view.getNode(msg.getNodeId()).publicKey())) {
+				logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
+				return false;
+			}
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			logger.warn(e.getMessage());
+			return false;
+		}
+
+		return true;
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */

@@ -79,6 +79,10 @@ public class PrePrepareMessage extends ProtoMessage {
 		return byteArrayOutputStream.toByteArray();
 	}
 
+	public static PrePrepareMessage nullRequestPreprepare(PrePrepareMessage msg) {
+		return new PrePrepareMessage(msg.viewNumber, msg.seq, msg.digest, null, msg.signature);
+	}
+
 	public static final ISerializer<PrePrepareMessage> serializer = new ISerializer<>() {
 
 		@Override
@@ -86,13 +90,15 @@ public class PrePrepareMessage extends ProtoMessage {
 			byteBuf.writeInt(prePrepareMessage.viewNumber);
 			byteBuf.writeInt(prePrepareMessage.seq);
 			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
-			ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
 
 			if (prePrepareMessage.signature != null) {
 				Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
 			} else {
 				throw new RuntimeException("PrePrepareMessage signature is null");
 			}
+
+			if (prePrepareMessage.request != null)
+				ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
 		}
 
 		@Override
@@ -100,9 +106,12 @@ public class PrePrepareMessage extends ProtoMessage {
 			int viewN = byteBuf.readInt();
 			int seq = byteBuf.readInt();
 			byte[] digest = Utils.byteArraySerializer.deserialize(byteBuf);
-			ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
 			byte[] signature = Utils.byteArraySerializer.deserialize(byteBuf);
 
+			if (byteBuf.readableBytes() == 0)
+				return new PrePrepareMessage(viewN, seq, digest, null, signature);
+
+			ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
 			return new PrePrepareMessage(viewN, seq, digest, request, signature);
 		}
 	};
