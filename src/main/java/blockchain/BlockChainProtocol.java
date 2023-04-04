@@ -151,8 +151,28 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
 
+		byte[] messageSignature = msg.getRequest().generateByteRepresentation();
 
-		//TODO check signatures (message and request), if valid and if the request is not in the chain send
+
+		try {
+			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
+				logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
+				return;
+			}
+			// check if the request is in the blockchain
+
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			logger.warn(e.getMessage());
+			return;
+		}
+
+		var suspectMessage = new StartClientRequestSuspectMessage(null, 0);
+
+		// send suspectMessage to all replicas
+
+		
+		// TODO check signatures (message and request), if valid and if the request is not in the chain send
 		// StartClientRequestSuspectMessage to all replicas (including self)
 		//FIXME for now can't check request signature (signed by the client) and checking the blockchain
 	}
@@ -183,6 +203,26 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	public void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender, short sourceProtocol, int channelId) {
+
+
+		try {
+			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
+				logger.warn("StartClientRequestSuspectMessage: Invalid signature: " + msg.getNodeId());
+				return;
+			}
+			// check if got f + 1
+			// check if request is in the chain
+
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			logger.warn(e.getMessage());
+			return;
+		}
+
+		var suspect = new LeaderSuspectTimer(msg.getRequestId());
+		handleLeaderSuspectTimer(suspect, 0); // ver qual é o timerId
+
+
 		//TODO check message signature, if valid and if got f + 1 StartClientRequestSuspectMessages (including this one)
 		// and if the request is not in the chain start LeaderSuspectTimer timer
 	}
