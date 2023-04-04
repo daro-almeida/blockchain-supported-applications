@@ -149,7 +149,11 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ----------------------------------------------- ------------- ------------------------------------------ */
 
 	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
-		//TODO check signatures (message and request), if valid and if the request is not in the chain send
+
+
+
+		
+		// TODO check signatures (message and request), if valid and if the request is not in the chain send
 		// StartClientRequestSuspectMessage to all replicas (including self)
 		// FIXME for now can't check request signature (signed by the client) and checking the blockchain
 	}
@@ -158,7 +162,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 
 		try {
-			if(msg.checkSignature(view.getPrimary().publicKey())){
+			if(msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
 				byte[] request = msg.getRequest().generateByteRepresentation();
 				byte[] signature = msg.getRequestSignature();
 		
@@ -172,6 +176,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 		
 
+		// TODO check signatures (message and request), if valid propose request to pbft
 		// FIXME for now can't check request signature (signed by the client)
 	}
 
