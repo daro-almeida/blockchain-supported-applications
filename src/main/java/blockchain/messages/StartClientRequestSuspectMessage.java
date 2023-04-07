@@ -6,6 +6,7 @@ import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import utils.Utils;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.UUID;
 
 public class StartClientRequestSuspectMessage extends SignedProtoMessage {
@@ -27,6 +28,19 @@ public class StartClientRequestSuspectMessage extends SignedProtoMessage {
 
 	public int getNodeId() {
 		return nodeId;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		StartClientRequestSuspectMessage that = (StartClientRequestSuspectMessage) o;
+		return getNodeId() == that.getNodeId() && Objects.equals(getRequestId(), that.getRequestId());
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(getRequestId(), getNodeId());
 	}
 
 	public static final SignedMessageSerializer<StartClientRequestSuspectMessage> serializer = new SignedMessageSerializer<>() {
