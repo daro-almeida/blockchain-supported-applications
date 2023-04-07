@@ -1,19 +1,31 @@
 package blockchain;
 
+import java.net.UnknownHostException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.SignatureException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
 import blockchain.requests.ClientRequest;
 import blockchain.timers.CheckUnhandledRequestsPeriodicTimer;
 import blockchain.timers.LeaderSuspectTimer;
+import blockchain.utils.PendingRequest;
 import consensus.PBFTProtocol;
 import consensus.notifications.CommittedNotification;
 import consensus.notifications.InitializedNotification;
 import consensus.notifications.ViewChange;
 import consensus.requests.ProposeRequest;
 import consensus.requests.SuspectLeader;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
@@ -22,15 +34,7 @@ import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Node;
 import utils.SignaturesHelper;
-import utils.Utils;
 import utils.View;
-
-import java.net.UnknownHostException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.SignatureException;
-import java.util.Properties;
 
 public class BlockChainProtocol extends GenericProtocol {
 
@@ -46,6 +50,10 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private final long checkRequestsPeriod;
 	private final long leaderTimeout;
+	private final long requestTimeout;
+
+	// <requestId, (request, timestamp)>
+	private final Map<UUID, PendingRequest> pendingRequests = new HashMap<>();
 
 	private Node self;
 	private View view;
@@ -56,6 +64,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		//Read timers and timeouts configurations
 		this.checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
 		this.leaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
+		this.requestTimeout = 10000; //TODO
 	}
 
 	@Override
@@ -103,7 +112,11 @@ public class BlockChainProtocol extends GenericProtocol {
 				throw new RuntimeException(e);
 			}
 			sendMessage(message, this.view.getPrimary().host());
+
+			pendingRequests.put(req.getRequestId(), new PendingRequest(req, signature, System.currentTimeMillis()));
 		}
+
+		
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
@@ -123,6 +136,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		//FIXME assuming blocks are one request for now
 		var request = ClientRequest.fromBytes(notif.getBlock());
 		logger.info("Committed operation: " + request.getRequestId());
+		pendingRequests.remove(request.getRequestId());
 	}
 
 	private void handleInitializedNotification(InitializedNotification notif, short protoID) {
@@ -216,8 +230,16 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ----------------------------------------------- ------------- ------------------------------------------ */
 
 	public void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
-		//TODO check pending requests, if any exceeded time limit to be ordered (returned by pbft) send
-		// ClientRequestUnhandledMessage to all replicas (including self)
+		/*TODO check pending requests, if any exceeded time limit to be ordered (returned by pbft) send
+		ClientRequestUnhandledMessage to all replicas (including self)
+		 */
+		pendingRequests.forEach( (reqId, req) -> {
+			if(req.timestamp() >= requestTimeout) {
+				var message = new ClientRequestUnhandledMessage(req.request(), req.signature(), self.id());
+				view.forEach(node -> sendMessage(message, node.host()) );
+			}
+		});
+		
 	}
 
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
@@ -257,8 +279,9 @@ public class BlockChainProtocol extends GenericProtocol {
     /* ----------------------------------------------- ------------- ------------------------------------------ */
     public void submitClientOperation(byte[] b) {
 		assert view != null;
+		var req = new ClientRequest(b);
+		sendRequest(req, BlockChainProtocol.PROTO_ID);
 
-		sendRequest(new ClientRequest(b), BlockChainProtocol.PROTO_ID);
     }
 
 }
