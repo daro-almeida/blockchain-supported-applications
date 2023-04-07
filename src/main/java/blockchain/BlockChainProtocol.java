@@ -30,7 +30,10 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.SignatureException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 
 public class BlockChainProtocol extends GenericProtocol {
 
@@ -49,6 +52,9 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private Node self;
 	private View view;
+    private final int f;
+
+	private final Map<UUID, StartClientRequestSuspectMessage> suspectMessages;
 
 	public BlockChainProtocol(Properties props) throws NumberFormatException, UnknownHostException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
@@ -56,6 +62,11 @@ public class BlockChainProtocol extends GenericProtocol {
 		//Read timers and timeouts configurations
 		this.checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
 		this.leaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
+
+		this.suspectMessages = new HashMap<>();
+
+		this.f = (view.size() - 1) / 3;
+        assert this.f > 0;
 	}
 
 	@Override
@@ -151,26 +162,23 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
 
-		byte[] messageSignature = msg.getRequest().generateByteRepresentation();
-
-
-		try {
-			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
-				logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
-				return;
-			}
-			// check if the request is in the blockchain
-
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			logger.warn(e.getMessage());
+		if(!validateHandleClientRequestUnhandledMessage(msg)){
 			return;
 		}
 
-		var suspectMessage = new StartClientRequestSuspectMessage(null, 0);
+		var suspectMessage = new StartClientRequestSuspectMessage(msg.getRequest().getRequestId(), msg.getNodeId());
+		suspectMessages.put(msg.getRequest().getRequestId(), suspectMessage);
 
-		// send suspectMessage to all replicas
-
+		try {
+			// é preciso isto?
+			suspectMessage.signMessage(key);
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
+            throw new RuntimeException(e);
+		}
+		// podemos mandar assim?
+		view.forEach(node -> {
+			sendMessage(suspectMessage, node.host());
+		});
 		
 		// TODO check signatures (message and request), if valid and if the request is not in the chain send
 		// StartClientRequestSuspectMessage to all replicas (including self)
@@ -188,23 +196,12 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender, short sourceProtocol, int channelId) {
 
-
-		try {
-			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
-				logger.warn("StartClientRequestSuspectMessage: Invalid signature: " + msg.getNodeId());
-				return;
-			}
-			// check if got f + 1
-			// check if request is in the chain
-
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			logger.warn(e.getMessage());
+		if(!validateHandleStartClientRequestSuspectMessage(msg)){
 			return;
 		}
 
 		var suspect = new LeaderSuspectTimer(msg.getRequestId());
-		handleLeaderSuspectTimer(suspect, 0); // ver qual é o timerId
+		handleLeaderSuspectTimer(suspect, LeaderSuspectTimer.TIMER_ID);
 
 
 		//TODO check message signature, if valid and if got f + 1 StartClientRequestSuspectMessages (including this one)
@@ -243,6 +240,53 @@ public class BlockChainProtocol extends GenericProtocol {
 				logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
 				return false;
 			}
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			logger.warn(e.getMessage());
+			return false;
+		}
+
+		return true;
+	}
+
+	public boolean validateHandleStartClientRequestSuspectMessage (StartClientRequestSuspectMessage msg){
+		try {
+			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
+				logger.warn("StartClientRequestSuspectMessage: Invalid signature: " + msg.getNodeId());
+				return false;
+			}
+			if(suspectMessages.size() < f + 1){
+				return false;
+			}
+			
+			// check if request is in the chain
+
+		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
+				| NoSignaturePresentException e) {
+			logger.warn(e.getMessage());
+			return false;
+		}
+		return true;
+	}
+
+	public boolean validateHandleClientRequestUnhandledMessage (ClientRequestUnhandledMessage msg){
+
+		byte[] messageSignature = msg.getRequest().generateByteRepresentation();
+		byte[] requestSignature = msg.getRequestSignature();
+
+
+		try {
+			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
+				logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
+				return false;
+			}
+			//FIXME for now can't check request signature (signed by the client)
+			if(!SignaturesHelper.checkSignature(messageSignature, requestSignature, view.getNode(msg.getNodeId()).publicKey())) {
+				logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
+				return false;
+			}
+			// check if the request is in the blockchain
+
 		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
 				| NoSignaturePresentException e) {
 			logger.warn(e.getMessage());
