@@ -1,5 +1,11 @@
 package utils;
 
+import consensus.messages.PrePrepareMessage;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
+import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
+import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
+import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.*;
@@ -51,6 +57,42 @@ public class Crypto {
             return md.digest(bytes);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void signMessage(SignedProtoMessage msg, PrivateKey key) {
+        try {
+            msg.signMessage(key);
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | InvalidSerializerException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static boolean checkSignature(SignedProtoMessage msg, PublicKey key) {
+        try {
+            return msg.checkSignature(key);
+        } catch (InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new RuntimeException(e);
+        } catch (SignatureException e) {
+            return false;
+        }
+    }
+
+    public static void signMessage(PrePrepareMessage msg, PrivateKey key) {
+        try {
+            msg.signMessage(key);
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static boolean checkSignature(PrePrepareMessage msg, PublicKey key) {
+        try {
+            return msg.checkSignature(key);
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new RuntimeException(e);
+        } catch (SignatureException e) {
+            return false;
         }
     }
 

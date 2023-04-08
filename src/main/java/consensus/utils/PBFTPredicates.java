@@ -14,9 +14,12 @@ public class PBFTPredicates {
      * request m, a pre-prepare for m in view v with sequence number n, and 2f prepares from different backups that
      * match the pre-prepare.
      */
-    public static boolean prepared(int viewNumber, int seqNum, int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares) {
+    public static boolean prepared(int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares) {
         if (prePrepare == null || prepares == null)
             return false;
+
+        var viewNumber = prePrepare.getViewNumber();
+        var seqNum = prePrepare.getSeq();
 
         int matchingPrepares = 0;
         for (var prepare : prepares) {
@@ -36,15 +39,20 @@ public class PBFTPredicates {
      *  different replicas that match the pre-prepare for m; a commit matches a pre-prepare if they have the same view,
      *  sequence number, and digest.
      */
-    public static boolean committed(int viewNumber, int seqNum, int f, PrePrepareMessage prePrepare,
-                                    Set<PrepareMessage> prepares, Set<CommitMessage> commits) {
+    public static boolean committed(int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares, Set<CommitMessage> commits) {
+        if (prePrepare == null || prepares == null || commits == null)
+            return false;
+
+        var viewNumber = prePrepare.getViewNumber();
+        var seqNum = prePrepare.getSeq();
+
         int matchingCommits = 0;
         for (var commit : commits) {
             if (commit.getViewNumber() == viewNumber && commit.getSeq() == seqNum && Arrays.equals(commit.getDigest(),
                     prePrepare.getDigest())) {
                 matchingCommits++;
                 if (matchingCommits >= 2 * f + 1) {
-                    return prepared(viewNumber, seqNum, f, prePrepare, prepares);
+                    return prepared(f, prePrepare, prepares);
                 }
             }
         }

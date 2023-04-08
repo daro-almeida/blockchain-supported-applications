@@ -1,5 +1,6 @@
 package utils;
 
+import java.security.PublicKey;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -38,6 +39,13 @@ public class View implements Iterable<Node> {
         this.primary = primary;
     }
 
+    public void updateView(int viewNumber, Node primary) {
+        assert viewNumber == this.viewNumber + 1;
+
+        this.viewNumber = viewNumber;
+        this.primary = primary;
+    }
+
     public Node getPrimary() {
         assert primary != null;
         return primary;
@@ -47,6 +55,18 @@ public class View implements Iterable<Node> {
         var node = nodes.get(id);
         assert node != null;
         return node;
+    }
+
+    public Map<Integer, PublicKey> publicKeys() {
+        Map<Integer, PublicKey> publicKeys = new HashMap<>();
+        for (Node node : nodes.values()) {
+            publicKeys.put(node.id(), node.publicKey());
+        }
+        return publicKeys;
+    }
+
+    public Node nextLeader() {
+        return nodes.get((primary.id() + 1) % nodes.size());
     }
 
     public int size() {

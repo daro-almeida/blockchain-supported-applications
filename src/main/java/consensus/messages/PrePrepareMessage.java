@@ -30,6 +30,18 @@ public class PrePrepareMessage extends ProtoMessage {
 		this.request = request;
 	}
 
+	public PrePrepareMessage(int viewNumber, int seq, byte[] digest) {
+		this(viewNumber, seq, digest, null);
+	}
+
+	public PrePrepareMessage(int viewNumber, int seq) {
+		this(viewNumber, seq, null, null);
+	}
+
+	public PrePrepareMessage(int newViewNumber, PrePrepareMessage prepareMessage) {
+		this(newViewNumber, prepareMessage.seq, prepareMessage.digest, prepareMessage.request, prepareMessage.signature);
+	}
+
 	private PrePrepareMessage(int viewNumber, int seq, byte[] digest, ProposeRequest request, byte[] signature) {
 		this(viewNumber, seq, digest, request);
 
@@ -52,6 +64,10 @@ public class PrePrepareMessage extends ProtoMessage {
 		return request;
 	}
 
+	public PrePrepareMessage nullifyRequest() {
+		return new PrePrepareMessage(viewNumber, seq, digest, null, signature);
+	}
+
 	public void signMessage(PrivateKey key) throws NoSuchAlgorithmException, SignatureException, InvalidKeyException {
 		var content = getSignatureContentBytes();
 
@@ -71,16 +87,13 @@ public class PrePrepareMessage extends ProtoMessage {
 		try {
 			outputStream.writeInt(viewNumber);
 			outputStream.writeInt(seq);
-			byteArrayOutputStream.write(digest);
+			if (digest != null)
+				byteArrayOutputStream.write(digest);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 
 		return byteArrayOutputStream.toByteArray();
-	}
-
-	public static PrePrepareMessage nullRequestPreprepare(PrePrepareMessage msg) {
-		return new PrePrepareMessage(msg.viewNumber, msg.seq, msg.digest, null, msg.signature);
 	}
 
 	public static final ISerializer<PrePrepareMessage> serializer = new ISerializer<>() {
@@ -89,7 +102,8 @@ public class PrePrepareMessage extends ProtoMessage {
 		public void serialize(PrePrepareMessage prePrepareMessage, ByteBuf byteBuf) throws IOException {
 			byteBuf.writeInt(prePrepareMessage.viewNumber);
 			byteBuf.writeInt(prePrepareMessage.seq);
-			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
+			if (prePrepareMessage.digest != null)
+				Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
 
 			if (prePrepareMessage.signature != null) {
 				Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);

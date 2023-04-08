@@ -21,6 +21,7 @@ import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.network.data.Host;
+import utils.Crypto;
 import utils.Node;
 import utils.SignaturesHelper;
 import utils.View;
@@ -96,13 +97,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		assert this.view != null;
 
 		byte[] request = req.generateByteRepresentation();
-		byte[] signature;
-		try {
-			//FIXME request should be signed by client and not by this replica, but for now it's ok because teachers didn't implement this yet :)
-			signature = SignaturesHelper.generateSignature(request, this.key);
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException e) {
-			throw new RuntimeException(e);
-		}
+		//FIXME request should be signed by client and not by this replica, but for now it's ok because teachers didn't implement this yet :)
+		byte[] signature = SignaturesHelper.generateSignature(request, this.key);
 
 		if(this.view.getPrimary().equals(this.self)) {
 			//Only one block should be submitted for agreement at a time
@@ -112,17 +108,13 @@ public class BlockChainProtocol extends GenericProtocol {
 			sendRequest(propose, PBFTProtocol.PROTO_ID);
 		} else {
 			var message = new RedirectClientRequestMessage(req, signature, this.self.id());
-			try {
-				message.signMessage(key);
-			} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
-				throw new RuntimeException(e);
-			}
+			Crypto.signMessage(message, this.key);
 			sendMessage(message, this.view.getPrimary().host());
 
 			pendingRequests.put(req.getRequestId(), new PendingRequest(req, signature, System.currentTimeMillis()));
 		}
 
-		
+
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
@@ -181,11 +173,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		suspectMessages.computeIfAbsent(msg.getRequest().getRequestId(), (k -> new HashSet<>())).add(suspectFromRequestUnhandled);
 
 		var suspectMessage = new StartClientRequestSuspectMessage(msg.getRequest().getRequestId(), msg.getNodeId());
-		try {
-			suspectMessage.signMessage(key);
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
-            throw new RuntimeException(e);
-		}
+		Crypto.signMessage(suspectMessage, this.key);
 
 		view.forEach(node -> sendMessage(suspectMessage, node.host()));
 	}
@@ -235,7 +223,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
 		//TODO check again if request is in the chain (not sure if this is necessary), if not send SuspectLeader to pbft
-		sendRequest(new SuspectLeader(t.getRequestID()), PBFTProtocol.PROTO_ID);
+		sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
@@ -246,19 +234,13 @@ public class BlockChainProtocol extends GenericProtocol {
 		byte[] request = msg.getRequest().generateByteRepresentation();
 		byte[] signature = msg.getRequestSignature();
 
-		try {
-			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-				logger.warn("RedirectClientRequestMessage: Invalid signature: " + msg.getNodeId());
-				return false;
-			}
-			//FIXME for now can't check request signature (signed by the client)
-			if(!SignaturesHelper.checkSignature(request, signature, view.getNode(msg.getNodeId()).publicKey())) {
-				logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
-				return false;
-			}
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			logger.warn(e.getMessage());
+		if(!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+			logger.warn("RedirectClientRequestMessage: Invalid signature: " + msg.getNodeId());
+			return false;
+		}
+		//FIXME for now can't check request signature (signed by the client)
+		if(!SignaturesHelper.checkSignature(request, signature, view.getNode(msg.getNodeId()).publicKey())) {
+			logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
 			return false;
 		}
 
@@ -266,14 +248,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	public boolean validateHandleStartClientRequestSuspectMessage (StartClientRequestSuspectMessage msg){
-		try {
-			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
-				logger.warn("StartClientRequestSuspectMessage: Invalid signature: " + msg.getNodeId());
-				return false;
-			}
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			logger.warn(e.getMessage());
+		if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+			logger.warn("StartClientRequestSuspectMessage: Invalid signature: " + msg.getNodeId());
 			return false;
 		}
 		return true;
@@ -283,19 +259,13 @@ public class BlockChainProtocol extends GenericProtocol {
 		byte[] messageSignature = msg.getRequest().generateByteRepresentation();
 		byte[] requestSignature = msg.getRequestSignature();
 
-		try {
-			if(!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())){
-				logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
-				return false;
-			}
-			//FIXME for now can't check request signature (signed by the client)
-			if(!SignaturesHelper.checkSignature(messageSignature, requestSignature, view.getNode(msg.getNodeId()).publicKey())) {
-				logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
-				return false;
-			}
-		} catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidFormatException
-				| NoSignaturePresentException e) {
-			logger.warn(e.getMessage());
+		if(!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())){
+			logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
+			return false;
+		}
+		//FIXME for now can't check request signature (signed by the client)
+		if(!SignaturesHelper.checkSignature(messageSignature, requestSignature, view.getNode(msg.getNodeId()).publicKey())) {
+			logger.warn("RedirectClientRequestMessage: Invalid request signature: " + msg.getNodeId());
 			return false;
 		}
 		return true;

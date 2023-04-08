@@ -1,21 +1,19 @@
 package consensus;
 
-import consensus.messages.CommitMessage;
-import consensus.messages.PrePrepareMessage;
-import consensus.messages.PrepareMessage;
+import consensus.messages.*;
 import consensus.notifications.CommittedNotification;
 import consensus.notifications.InitializedNotification;
+import consensus.notifications.ViewChange;
 import consensus.requests.ProposeRequest;
 import consensus.requests.SuspectLeader;
 import consensus.utils.PBFTPredicates;
+import consensus.utils.PBFTUtils;
+import consensus.utils.PreparedProof;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
-import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
-import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
-import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
@@ -46,27 +44,24 @@ public class PBFTProtocol extends GenericProtocol {
     private final Node self;
     private final View view;
     private final int f;
+
     //seq -> msg set
-    private final Map<Integer, PrePrepareMessage> prePreparesLog;
-    private final Map<Integer, Set<PrepareMessage>> preparesLog;
-    private final Map<Integer, Set<CommitMessage>> commitsLog;
+    private final Map<Integer, PrePrepareMessage> prePreparesLog = new HashMap<>();
+    private final Map<Integer, Set<PrepareMessage>> preparesLog = new HashMap<>();
+    private final Map<Integer, Set<CommitMessage>> commitsLog = new HashMap<>();
+    private final Map<Integer, Set<ViewChangeMessage>> viewChangesLog = new HashMap<>();
+
     //seq
-    private final Set<Integer> sentCommits;
+    private final Set<Integer> sentCommits = new HashSet<>();
+    private final Set<Integer> askedViewChanges = new HashSet<>();
+
     private final PrivateKey key;
 
-    private int seq;
-    private int nextToExecute;
+    private int seq = 0;
+    private int nextToExecute = 0;
 
     public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
         super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
-
-        this.seq = 0;
-        this.nextToExecute = 0;
-
-        this.prePreparesLog = new HashMap<>();
-        this.preparesLog = new HashMap<>();
-        this.commitsLog = new HashMap<>();
-        this.sentCommits = new HashSet<>();
 
         var id = Integer.parseInt(props.getProperty("id"));
         var selfHost = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
@@ -116,6 +111,8 @@ public class PBFTProtocol extends GenericProtocol {
         registerMessageHandler(peerChannel, PrePrepareMessage.MESSAGE_ID, this::uponPrePrepareMessage);
         registerMessageHandler(peerChannel, PrepareMessage.MESSAGE_ID, this::uponPrepareMessage);
         registerMessageHandler(peerChannel, CommitMessage.MESSAGE_ID, this::uponCommitMessage);
+        registerMessageHandler(peerChannel, ViewChangeMessage.MESSAGE_ID, this::uponViewChangeMessage);
+        registerMessageHandler(peerChannel, NewViewMessage.MESSAGE_ID, this::uponNewViewMessage);
 
         registerMessageSerializer(peerChannel, PrePrepareMessage.MESSAGE_ID, PrePrepareMessage.serializer);
         registerMessageSerializer(peerChannel, PrepareMessage.MESSAGE_ID, PrepareMessage.serializer);
@@ -139,10 +136,6 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
 
-    // --------------------------------------- Predicates -----------------------------------
-
-
-
     // --------------------------------------- Request Handlers -----------------------------------
 
     private void uponProposeRequest(ProposeRequest req, short sourceProto) {
@@ -153,11 +146,7 @@ public class PBFTProtocol extends GenericProtocol {
         prePreparesLog.put(seq, prePrepareMessage);
         var prepareMessage = new PrepareMessage(prePrepareMessage, view.getPrimary().id());
         preparesLog.computeIfAbsent(seq, k -> new HashSet<>()).add(prepareMessage);
-        try {
-            prePrepareMessage.signMessage(key);
-        } catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException e) {
-            throw new RuntimeException(e);
-        }
+        Crypto.signMessage(prepareMessage, key);
         view.forEach(node -> {
             if (!node.equals(self))
                 sendMessage(prePrepareMessage, node.host());
@@ -166,15 +155,18 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
+        if (req.getCurrentViewNumber() != view.getViewNumber() && !askedViewChanges.contains(req.getCurrentViewNumber() + 1))
+            return;
 
-        //TODO not sure in the order or correctness of this:
-        // 1. send ViewChangeMessage (not made yet) to all other replicas
-        // 2. take care of pending operations of current view so they're not discarded (thought in lecture) (might be
-        // done when receiving ViewChangeMessage)
-        // 3. calculate new leader (next in id order something like (id = prevId + 1 % view.size)), update view, then
-        // send ViewChanged to blockchain (might also not be this method that does this)
+        var viewChangeMessage = new ViewChangeMessage(req.getCurrentViewNumber() + 1,
+                nextToExecute - 1, calculatePreparedProofs(), self.id());
+        Crypto.signMessage(viewChangeMessage, key);
 
-        // for now doing just 3. is easy and good enough :)
+        view.forEach(node -> {
+            if (!node.equals(self))
+                sendMessage(viewChangeMessage, node.host());
+        });
+        askedViewChanges.add(req.getCurrentViewNumber() + 1);
     }
 
 
@@ -189,11 +181,8 @@ public class PBFTProtocol extends GenericProtocol {
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(new PrepareMessage(msg, view.getPrimary().id()));
 
         var prepareMessage = new PrepareMessage(msg, this.self.id());
-        try {
-            prepareMessage.signMessage(key);
-        } catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | InvalidSerializerException e) {
-            throw new RuntimeException(e);
-        }
+        Crypto.signMessage(prepareMessage, key);
+
         view.forEach(node -> sendMessage(prepareMessage, node.host()));
         seq = Math.max(msg.getSeq() + 1, seq);
     }
@@ -205,17 +194,16 @@ public class PBFTProtocol extends GenericProtocol {
 
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
         var prePrepare = prePreparesLog.get(msg.getSeq());
-        if (prePrepare != null && PBFTPredicates.prepared(msg.getViewNumber(), msg.getSeq(), this.f,
-                prePrepare, preparesLog.get(msg.getSeq()))) {
+        if (prePrepare != null && PBFTPredicates.prepared(this.f, prePrepare, preparesLog.get(msg.getSeq()))) {
             var commitMessage = new CommitMessage(msg, this.self.id());
-            try {
-                commitMessage.signMessage(key);
-            } catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException |
-                     InvalidSerializerException e) {
-                throw new RuntimeException(e);
-            }
-            view.forEach(node -> sendMessage(commitMessage, node.host()));
+            Crypto.signMessage(commitMessage, key);
+
+            view.forEach(node -> {
+                if (!node.equals(self))
+                    sendMessage(commitMessage, node.host());
+            });
             sentCommits.add(msg.getSeq());
+
         }
     }
 
@@ -231,9 +219,180 @@ public class PBFTProtocol extends GenericProtocol {
             commitRequests();
     }
 
+    private void uponViewChangeMessage(ViewChangeMessage msg, Host sender, short sourceProtocol, int channelId) {
+        if(!validateViewChangeMessage(msg))
+            return;
+
+        viewChangesLog.computeIfAbsent(msg.getNewViewNumber(), k -> new HashSet<>()).add(msg);
+        var viewChanges = viewChangesLog.get(msg.getNewViewNumber());
+
+        if (viewChanges.size() >= 2*f && view.nextLeader().equals(self)) {
+            var primaryViewChange = new ViewChangeMessage(msg.getNewViewNumber(), nextToExecute - 1,
+                    calculatePreparedProofs(), self.id());
+            viewChanges.add(primaryViewChange);
+
+            Set<PrePrepareMessage> prePrepares = PBFTUtils.newPrePrepareMessages(msg.getNewViewNumber(), viewChanges);
+            prePrepares.forEach(prePrepare -> {
+                Crypto.signMessage(prePrepare, key);
+
+                var oldPrePrepare = prePreparesLog.get(prePrepare.getSeq());
+                if (oldPrePrepare == null)
+                    prePreparesLog.put(prePrepare.getSeq(), prePrepare);
+                else
+                    prePreparesLog.put(prePrepare.getSeq(), new PrePrepareMessage(prePrepare.getViewNumber(), prePrepare));
+            });
+
+            var newViewMessage = new NewViewMessage(msg.getNewViewNumber(), viewChanges, prePrepares);
+            Crypto.signMessage(newViewMessage, key);
+
+            view.forEach(node -> {
+                if (!node.equals(self))
+                    sendMessage(newViewMessage, node.host());
+            });
+            view.updateView(msg.getNewViewNumber(), this.self);
+            triggerNotification(new ViewChange(view));
+        }
+    }
+
+    private void uponNewViewMessage(NewViewMessage msg, Host sender, short sourceProtocol, int channelId) {
+        if (!validateNewViewMessage(msg))
+            return;
+
+        msg.getPrePrepares().forEach(prePrepare -> {
+            var oldPrePrepare = prePreparesLog.get(prePrepare.getSeq());
+            if (oldPrePrepare == null)
+                prePreparesLog.put(prePrepare.getSeq(), prePrepare);
+            else
+                prePreparesLog.put(prePrepare.getSeq(), new PrePrepareMessage(prePrepare.getViewNumber(), prePrepare));
+
+            var prepareMessage = new PrepareMessage(prePrepare, view.getPrimary().id());
+            Crypto.signMessage(prepareMessage, key);
+
+            preparesLog.put(prePrepare.getSeq(), new HashSet<>());
+            preparesLog.get(prePrepare.getSeq()).add(prepareMessage);
+
+            view.forEach(node -> {
+                if (!node.equals(self))
+                    sendMessage(prepareMessage, node.host());
+            });
+        });
+
+        view.updateView(msg.getNewViewNumber(), view.nextLeader());
+        triggerNotification(new ViewChange(view));
+    }
+
     // --------------------------------------- Notification Handlers ------------------------------------------
 
     // --------------------------------------- Timer Handlers -------------------------------------------------
+
+    // --------------------------------------- Auxiliary Functions --------------------------------------------
+
+    private void commitRequests() {
+        var prePrepare = prePreparesLog.get(nextToExecute);
+        while (PBFTPredicates.committed(this.f, prePrepare, preparesLog.get(nextToExecute), commitsLog.get(nextToExecute))) {
+            var request = prePrepare.getRequest();
+            triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+            logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
+
+            prePrepare = prePreparesLog.get(++nextToExecute);
+        }
+    }
+
+    private Map<Integer, PreparedProof> calculatePreparedProofs() {
+        Map<Integer, PreparedProof> preparedProofs = new HashMap<>();
+        for (var prepares: preparesLog.entrySet()) {
+            var seq = prepares.getKey();
+            // if sent commits then must have prepared this request
+            if (sentCommits.contains(seq)) {
+                preparedProofs.put(seq,
+                        new PreparedProof(prePreparesLog.get(seq).nullifyRequest(), prepares.getValue()));
+            }
+        }
+        return preparedProofs;
+    }
+
+
+
+    private boolean validatePrePrepare(PrePrepareMessage msg) {
+        if (msg.getViewNumber() != view.getViewNumber()) {
+            logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (prePreparesLog.containsKey(msg.getSeq())) {
+            logger.warn("PrePrepareMessage already exists: " + msg.getSeq());
+            return false;
+        }
+        if (!Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
+            logger.warn("PrePrepareMessage: Digests don't match: seq=" + msg.getSeq() + ": " +
+                    Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
+            return false;
+        }
+        if (!Crypto.checkSignature(msg, view.getPrimary().publicKey())) {
+            logger.warn("PrePrepareMessage: Invalid signature: " + msg.getSeq());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePrepare(PrepareMessage msg) {
+        if (msg.getViewNumber() != view.getViewNumber()) {
+            logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("PrepareMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateCommit(CommitMessage msg) {
+        if (msg.getViewNumber() != view.getViewNumber()) {
+            logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("CommitMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateViewChangeMessage(ViewChangeMessage msg) {
+        if (msg.getNewViewNumber() <= view.getViewNumber()) {
+            logger.warn("ViewChangeMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
+            return false;
+        }
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("ViewChangeMessage: Invalid signature: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
+            return false;
+        }
+        if (!msg.preparedProofsValid(f, view.publicKeys())) {
+            logger.warn("ViewChangeMessage: Invalid prepared proofs: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateNewViewMessage(NewViewMessage msg) {
+        if (msg.getNewViewNumber() <= view.getViewNumber()) {
+            logger.warn("NewViewMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
+            return false;
+        }
+        if (!Crypto.checkSignature(msg, view.getPrimary().publicKey())) {
+            logger.warn("NewViewMessage: Invalid signature: " + view.getPrimary().id());
+            return false;
+        }
+        if (!msg.viewChangesValid(f, view.publicKeys())) {
+            logger.warn("NewViewMessage: Invalid view change messages: " + msg.getNewViewNumber());
+            return false;
+        }
+        if (!msg.prePreparesValid(view.getPrimary().publicKey())) {
+            logger.warn("NewViewMessage: Invalid pre-prepare messages: " + msg.getNewViewNumber());
+            return false;
+        }
+        return true;
+    }
 
     // --------------------------------------- Connection Manager Functions -----------------------------------
 
@@ -258,84 +417,5 @@ public class PBFTProtocol extends GenericProtocol {
         logger.warn(event);
     }
 
-    // --------------------------------------- Auxiliary Functions -----------------------------------
 
-    private void commitRequests() {
-        var prePrepare = prePreparesLog.get(nextToExecute);
-        while (prePrepare != null && PBFTPredicates.committed(view.getViewNumber(), nextToExecute, this.f,
-                prePrepare, preparesLog.get(nextToExecute), commitsLog.get(nextToExecute))) {
-            var request = prePrepare.getRequest();
-            triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
-            logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
-
-            // removing messages related to this commit from logs, still don't know for now if we might need them later
-            prePreparesLog.remove(nextToExecute);
-            //preparesLog.remove(nextToExecute);
-            commitsLog.remove(nextToExecute);
-
-            prePrepare = prePreparesLog.get(++nextToExecute);
-        }
-    }
-
-    private boolean validatePrePrepare(PrePrepareMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (prePreparesLog.containsKey(msg.getSeq())) {
-                logger.warn("PrePrepareMessage already exists: " + msg.getSeq());
-                return false;
-            }
-            if (!Arrays.equals(msg.getDigest(), msg.getRequest().getDigest())) {
-                logger.warn("PrePrepareMessage: Digests don't match: seq=" + msg.getSeq() + ": " +
-                        Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
-                return false;
-            }
-            if (!msg.checkSignature(view.getPrimary().publicKey())) {
-                logger.warn("PrePrepareMessage: Invalid signature: " + msg.getSeq());
-                return false;
-            }
-        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean validatePrepare(PrepareMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-                logger.warn("PrepareMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
-                return false;
-            }
-        } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException | InvalidFormatException |
-                 NoSignaturePresentException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean validateCommit(CommitMessage msg) {
-        try {
-            if (msg.getViewNumber() != view.getViewNumber()) {
-                logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
-                return false;
-            }
-            if (!msg.checkSignature(view.getNode(msg.getNodeId()).publicKey())) {
-                logger.warn("CommitMessage: Invalid signature: " + msg.getSeq() + ", " + msg.getNodeId());
-                return false;
-            }
-        } catch (SignatureException | InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException
-                 | InvalidKeyException e) {
-            logger.warn(e.getMessage());
-            return false;
-        }
-        return true;
-    }
 }
