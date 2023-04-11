@@ -182,7 +182,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponBlockReply(BlockReply reply, short sourceProto) {
-
+        //TODO send reply to node who asked for this
     }
 
 
@@ -332,8 +332,9 @@ public class PBFTProtocol extends GenericProtocol {
             else
                 prePreparesLog.put(prePrepare.getSeq(), new PrePrepareMessage(prePrepare.getViewNumber(), prePrepare));
 
-
             preparesLog.put(prePrepare.getSeq(), new HashSet<>());
+            commitsLog.put(prePrepare.getSeq(), new HashSet<>());
+
             if (!nextLeader.equals(self)) {
                 var prepareMessage = new PrepareMessage(prePrepare, self.id());
                 preparesLog.get(prePrepare.getSeq()).add(prepareMessage);
