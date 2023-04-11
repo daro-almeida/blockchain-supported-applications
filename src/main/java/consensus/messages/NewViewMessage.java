@@ -35,19 +35,29 @@ public class NewViewMessage extends SignedProtoMessage {
         return prePrepares;
     }
 
+    // min seq of operation at least 2f+1 replicas executed ((f+1)th element of array in ascending order)
+    public int minS(int f) {
+        return (int) viewChanges.stream().map(ViewChangeMessage::getLastExecuted).sorted(Integer::compareTo).toArray()[f];
+    }
+
+    // max prepared
+    public int maxS() {
+        return viewChanges.stream().map(ViewChangeMessage::maxPrepared).max(Integer::compareTo).orElse(-1);
+    }
+
     public boolean viewChangesValid(int f, Map<Integer, PublicKey> publicKeys) {
         return viewChanges.size() >= 2 * f + 1 &&
                 viewChanges.stream().allMatch(vc ->
                         Crypto.checkSignature(vc, publicKeys.get(vc.getNodeId())) && vc.preparedProofsValid(f, publicKeys));
     }
 
-    public boolean prePreparesValid(PublicKey primaryPublicKey) {
+    public boolean prePreparesValid(PublicKey primaryPublicKey, int f) {
         if (!prePrepares.stream().allMatch(p -> Crypto.checkSignature(p, primaryPublicKey)))
             return false;
 
         //TODO this ((might)) be a scuffed way to do this, basically we are recreating the prePrepareMessages and see if
         // they are the same as the ones we received
-        return prePrepares.equals(PBFTUtils.newPrePrepareMessages(newViewNumber, viewChanges));
+        return prePrepares.equals(PBFTUtils.newPrePrepareMessages(newViewNumber, viewChanges, f));
     }
 
     public static final SignedMessageSerializer<NewViewMessage> serializer = new SignedMessageSerializer<>() {

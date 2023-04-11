@@ -8,15 +8,15 @@ public class SuspectLeader extends ProtoRequest {
 
 	public final static short REQUEST_ID = 102;
 
-	private final int currentViewNumber;
+	private final int newViewNumber;
 	
-	public SuspectLeader(int currentViewNumber) {
+	public SuspectLeader(int newViewNumber) {
 		super(SuspectLeader.REQUEST_ID);
-		this.currentViewNumber = currentViewNumber;
+		this.newViewNumber = newViewNumber;
 	}
 
-	public int getCurrentViewNumber() {
-		return currentViewNumber;
+	public int getNewViewNumber() {
+		return newViewNumber;
 	}
 
 }

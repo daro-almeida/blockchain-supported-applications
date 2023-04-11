@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+//FIXME probably will not need this
+
 // proof the replica has (or could have) committed  the associated request (submitted to the protocol above)
 public class CommittedProof implements Proof {
 

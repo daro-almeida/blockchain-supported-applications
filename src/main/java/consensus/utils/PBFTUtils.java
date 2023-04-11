@@ -9,9 +9,9 @@ import java.util.Set;
 
 public class PBFTUtils {
 
-    public static Set<PrePrepareMessage> newPrePrepareMessages(int newViewNumber, Set<ViewChangeMessage> viewChanges) {
-        // min last executed
-        int minSeq = viewChanges.stream().map(ViewChangeMessage::getLastExecuted).min(Integer::compareTo).orElse(-1);
+    public static Set<PrePrepareMessage> newPrePrepareMessages(int newViewNumber, Set<ViewChangeMessage> viewChanges, int f) {
+        // min seq of operation at least 2f+1 replicas executed ((f+1)th element of array in ascending order)
+        int minSeq = (int) viewChanges.stream().map(ViewChangeMessage::getLastExecuted).sorted(Integer::compareTo).toArray()[f];
         // max prepared
         int maxSeq = viewChanges.stream().map(ViewChangeMessage::maxPrepared).max(Integer::compareTo).orElse(-1);
 

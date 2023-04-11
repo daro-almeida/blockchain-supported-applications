@@ -17,11 +17,6 @@ public class ViewChangeMessage extends SignedProtoMessage {
 
     private final int newViewNumber, nodeId, lastExecuted;
 
-    //FIXME ignored for now
-    // since this checkpoint holds no state, we can just send it instead of the 2f + 1 checkpoints
-    // stable checkpoint this node has with seq = n
-    // private final StableCheckpoint stableCheckpoint;
-
     // proofs this node prepared requests with seqNum > n
     private final Map<Integer, PreparedProof> preparedProofs;
 

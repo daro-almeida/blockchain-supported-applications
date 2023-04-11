@@ -15,7 +15,7 @@ public class PBFTPredicates {
      * match the pre-prepare.
      */
     public static boolean prepared(int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares) {
-        if (prePrepare == null || prepares == null)
+        if (prePrepare == null || prepares == null || prepares.size() < 2 * f)
             return false;
 
         var viewNumber = prePrepare.getViewNumber();
@@ -25,8 +25,7 @@ public class PBFTPredicates {
         for (var prepare : prepares) {
             if (prepare.getViewNumber() == viewNumber && prepare.getSeq() == seqNum && Arrays.equals(prepare.getDigest(), prePrepare.getDigest())) {
                 matchingPrepares++;
-                // 2f + 1 because it includes the pre-prepare from the primary
-                if (matchingPrepares >= 2 * f + 1) {
+                if (matchingPrepares >= 2 * f) {
                     return true;
                 }
             }
@@ -40,7 +39,7 @@ public class PBFTPredicates {
      *  sequence number, and digest.
      */
     public static boolean committed(int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares, Set<CommitMessage> commits) {
-        if (prePrepare == null || prepares == null || commits == null)
+        if (prePrepare == null || prepares == null || prepares.size() < 2 * f + 1 || commits == null || commits.size() < 2 * f + 1)
             return false;
 
         var viewNumber = prePrepare.getViewNumber();

@@ -31,12 +31,7 @@ public class ProposeRequest extends ProtoRequest {
 
 	public byte[] getDigest() {
 		if (digest == null) {
-			// create byte array with block and signature
-			byte[] blockAndSignature = new byte[block.length + signature.length];
-			System.arraycopy(block, 0, blockAndSignature, 0, block.length);
-			System.arraycopy(signature, 0, blockAndSignature, block.length, signature.length);
-
-			digest = Crypto.digest(blockAndSignature);
+			digest = Crypto.digest(block);
 		}
 		return digest;
 	}
