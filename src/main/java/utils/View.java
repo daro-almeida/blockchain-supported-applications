@@ -8,11 +8,13 @@ public class View implements Iterable<Node> {
 
     private int viewNumber;
     private Node primary;
+    private final int firstPrimaryId;
     private final Map<Integer, Node> nodes;
 
     public View(List<Node> nodeList, Node primary) {
         this.viewNumber = 0;
         this.primary = primary;
+        this.firstPrimaryId = primary.id();
         this.nodes = new HashMap<>();
         for (Node node : nodeList) {
             nodes.put(node.id(), node);
@@ -22,6 +24,7 @@ public class View implements Iterable<Node> {
     public View(View view) {
         this.viewNumber = view.viewNumber;
         this.primary = view.primary;
+        this.firstPrimaryId = view.firstPrimaryId;
         this.nodes = new HashMap<>(view.nodes);
     }
 
@@ -29,21 +32,11 @@ public class View implements Iterable<Node> {
         return viewNumber;
     }
 
-    public void updateView(int viewNumber, List<Node> nodeList, Node primary) {
-        assert viewNumber == this.viewNumber + 1;
+    public void updateView(int viewNumber) {
+        assert viewNumber > this.viewNumber;
 
         this.viewNumber = viewNumber;
-        for (Node node : nodeList) {
-            nodes.put(node.id(), node);
-        }
-        this.primary = primary;
-    }
-
-    public void updateView(int viewNumber, Node primary) {
-        assert viewNumber == this.viewNumber + 1;
-
-        this.viewNumber = viewNumber;
-        this.primary = primary;
+        this.primary = leaderInView(viewNumber);
     }
 
     public Node getPrimary() {
@@ -65,13 +58,8 @@ public class View implements Iterable<Node> {
         return publicKeys;
     }
 
-    public Node nextLeader() {
-        return nodes.get((primary.id() + 1) % nodes.size());
-    }
-
-    public Node leaderIn(int viewNumber) {
-        // assumes first leader is always node 1
-        return nodes.get((1 + viewNumber) % nodes.size());
+    public Node leaderInView(int viewNumber) {
+        return nodes.get((firstPrimaryId + viewNumber) % nodes.size());
     }
 
     public int size() {

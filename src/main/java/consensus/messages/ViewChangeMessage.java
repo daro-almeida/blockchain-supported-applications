@@ -56,6 +56,10 @@ public class ViewChangeMessage extends SignedProtoMessage {
         return true;
     }
 
+    public Map<Integer, PreparedProof> getPreparedProofs() {
+        return preparedProofs;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -103,4 +107,5 @@ public class ViewChangeMessage extends SignedProtoMessage {
     public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
         return serializer;
     }
+
 }

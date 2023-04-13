@@ -10,6 +10,7 @@ import consensus.requests.SuspectLeader;
 import consensus.utils.PBFTPredicates;
 import consensus.utils.PBFTUtils;
 import consensus.utils.PreparedProof;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
@@ -19,10 +20,7 @@ import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
 import pt.unl.fct.di.novasys.network.data.Host;
-import utils.Crypto;
-import utils.Node;
-import utils.Utils;
-import utils.View;
+import utils.*;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -33,6 +31,7 @@ import java.security.PrivateKey;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class PBFTProtocol extends GenericProtocol {
 
@@ -49,14 +48,16 @@ public class PBFTProtocol extends GenericProtocol {
     private final View view;
     private final int f;
 
-    //seq -> msg set
+    //seq
     private final Map<Integer, PrePrepareMessage> prePreparesLog = new HashMap<>();
     private final Map<Integer, Set<PrepareMessage>> preparesLog = new HashMap<>();
     private final Map<Integer, Set<CommitMessage>> commitsLog = new HashMap<>();
     private final Map<Integer, Set<ViewChangeMessage>> viewChangesLog = new HashMap<>();
-
+    private final Map<Integer, Map<Node, byte[]>> receivedHashes = new HashMap<>();
     //seq, view
     private final Map<Integer, Set<Integer>> sentCommits = new HashMap<>();
+    //view
+    private final Set<Integer> askedViewChanges = new HashSet<>();
 
     private final PrivateKey key;
 
@@ -121,8 +122,8 @@ public class PBFTProtocol extends GenericProtocol {
         registerMessageHandler(peerChannel, NewViewMessage.MESSAGE_ID, this::uponNewViewMessage);
         registerMessageHandler(peerChannel, PullRequestsMessage.MESSAGE_ID, this::uponPullRequestsMessage);
         registerMessageHandler(peerChannel, PullRequestsReplyMessage.MESSAGE_ID, this::uponPullRequestsReplyMessage);
-        registerMessageHandler(peerChannel, PullHashMessage.MESSAGE_ID, this::uponPullHashMessage);
-        registerMessageHandler(peerChannel, PullHashReplyMessage.MESSAGE_ID, this::uponPullHashReplyMessage);
+        registerMessageHandler(peerChannel, PullHashesMessage.MESSAGE_ID, this::uponPullHashMessage);
+        registerMessageHandler(peerChannel, PullHashesReplyMessage.MESSAGE_ID, this::uponPullHashReplyMessage);
 
         registerMessageSerializer(peerChannel, PrePrepareMessage.MESSAGE_ID, PrePrepareMessage.serializer);
         registerMessageSerializer(peerChannel, PrepareMessage.MESSAGE_ID, PrepareMessage.serializer);
@@ -131,8 +132,8 @@ public class PBFTProtocol extends GenericProtocol {
         registerMessageSerializer(peerChannel, NewViewMessage.MESSAGE_ID, NewViewMessage.serializer);
         registerMessageSerializer(peerChannel, PullRequestsMessage.MESSAGE_ID, PullRequestsMessage.serializer);
         registerMessageSerializer(peerChannel, PullRequestsReplyMessage.MESSAGE_ID, PullRequestsReplyMessage.serializer);
-        //registerMessageSerializer(peerChannel, PullHashMessage.MESSAGE_ID, PullHashMessage.serializer);
-        //registerMessageSerializer(peerChannel, PullHashReplyMessage.MESSAGE_ID, PullHashReplyMessage.serializer);
+        registerMessageSerializer(peerChannel, PullHashesMessage.MESSAGE_ID, PullHashesMessage.serializer);
+        registerMessageSerializer(peerChannel, PullHashesReplyMessage.MESSAGE_ID, PullHashesReplyMessage.serializer);
 
         registerChannelEventHandler(peerChannel, InConnectionDown.EVENT_ID, this::uponInConnectionDown);
         registerChannelEventHandler(peerChannel, InConnectionUp.EVENT_ID, this::uponInConnectionUp);
@@ -167,22 +168,22 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
-        //TODO probably need something to not repeat view change for same view number
-        if (req.getNewViewNumber() <= view.getViewNumber())
+        if (req.getNewViewNumber() <= view.getViewNumber() || askedViewChanges.contains(req.getNewViewNumber()))
             return;
+
+        askedViewChanges.add(req.getNewViewNumber());
 
         var viewChangeMessage = new ViewChangeMessage(req.getNewViewNumber(),
                 nextToExecute - 1, calculatePreparedProofs(), self.id());
         Crypto.signMessage(viewChangeMessage, key);
 
-        view.forEach(node -> {
-            if (!node.equals(self))
-                sendMessage(viewChangeMessage, node.host());
-        });
+        var newLeader = view.leaderInView(req.getNewViewNumber());
+        if (!newLeader.equals(self))
+            sendMessage(viewChangeMessage, newLeader.host());
     }
 
     private void uponBlockReply(BlockReply reply, short sourceProto) {
-        //TODO send reply to node who asked for this
+        //FIXME when blockchain is implemented, implement here the logic in uponPullRequestsReplyMessage
     }
 
 
@@ -223,8 +224,7 @@ public class PBFTProtocol extends GenericProtocol {
             });
             sentCommits.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg.getViewNumber());
 
-            if (msg.getSeq() == nextToExecute)
-                commitRequests();
+            commitRequests();
         }
     }
 
@@ -236,18 +236,17 @@ public class PBFTProtocol extends GenericProtocol {
 
         commitsLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);
 
-        if (msg.getSeq() == nextToExecute)
-            commitRequests();
+        commitRequests();
     }
 
     private void uponViewChangeMessage(ViewChangeMessage msg, Host sender, short sourceProtocol, int channelId) {
-        if(!validateViewChangeMessage(msg))
+        if(!view.leaderInView(msg.getNewViewNumber()).equals(self) || !validateViewChange(msg))
             return;
 
         viewChangesLog.computeIfAbsent(msg.getNewViewNumber(), k -> new HashSet<>()).add(msg);
         var viewChanges = viewChangesLog.get(msg.getNewViewNumber());
 
-        if (viewChanges.size() >= 2*f && view.nextLeader().equals(self)) {
+        if (viewChanges.size() >= 2*f) {
             var primaryViewChange = new ViewChangeMessage(msg.getNewViewNumber(), nextToExecute - 1,
                     calculatePreparedProofs(), self.id());
             viewChanges.add(primaryViewChange);
@@ -269,30 +268,82 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponNewViewMessage(NewViewMessage msg, Host sender, short sourceProtocol, int channelId) {
-        if (!validateNewViewMessage(msg))
+        if (!validateNewView(msg))
             return;
 
         processNewViewMessage(msg);
     }
 
     private void uponPullRequestsMessage(PullRequestsMessage msg, Host host, short sourceProtocol, int channelId) {
-        //TODO get blocks from blockchain and reply
+        if (!validatePullRequests(msg))
+            return;
+
         //FIXME while we don't have a blockchain, reply with pre-prepares
+        var requests = new HashMap<Integer, ProposeRequest>();
+        msg.getNeededRequests().forEach(seq -> {
+            var prePrepare = prePreparesLog.get(seq);
+            if (prePrepare != null && prePrepare.getRequest() != null)
+                requests.put(seq, prePrepare.getRequest());
+        });
+        var reply = new PullRequestsReplyMessage(requests, this.self.id());
+        Crypto.signMessage(reply, key);
+        sendMessage(reply, view.getNode(msg.getNodeId()).host());
     }
 
     private void uponPullRequestsReplyMessage(PullRequestsReplyMessage msg, Host host, short sourceProtocol, int channelId) {
-        //TODO add requests to log and try to commit them, for requests that need hashes wait for them
+        if (!validatePullRequestsReply(msg))
+            return;
+
+        msg.getRequests().forEach((seq, request) -> {
+            var prePrepare = prePreparesLog.get(seq);
+            if (prePrepare == null && requestConfirmedValid(request)) {
+                var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq,
+                        request.getDigest(), request);
+                // don't need to sign this prePrepare since it won't be shared
+                prePreparesLog.put(seq, newPrePrepare);
+            } else if (prePrepare != null) {
+                prePrepare.setRequest(request);
+            }
+        });
 
         commitRequests();
     }
 
-    private void uponPullHashMessage(PullHashMessage msg, Host host, short sourceProtocol, int channelId) {
-        //TODO get hash from blockchain (or block then get hash from it) and reply
+    private void uponPullHashMessage(PullHashesMessage msg, Host host, short sourceProtocol, int channelId) {
+        if (!validatePullHashes(msg))
+            return;
+
         //FIXME while we don't have a blockchain, get them from pre-prepares
+        var hashes = new HashMap<Integer, byte[]>();
+        msg.getNeededHashes().forEach(seq -> {
+            var prePrepare = prePreparesLog.get(seq);
+            if (prePrepare != null)
+                hashes.put(seq, prePrepare.getRequest().getDigest());
+        });
+
+        var reply = new PullHashesReplyMessage(hashes, this.self.id());
+        Crypto.signMessage(reply, key);
+        sendMessage(reply, view.getNode(msg.getNodeId()).host());
     }
 
-    private void uponPullHashReplyMessage(PullHashReplyMessage msg, Host host, short sourceProtocol, int channelId) {
-        //TODO add hash to log, if have enough of them and request try to commit them
+    private void uponPullHashReplyMessage(PullHashesReplyMessage msg, Host host, short sourceProtocol, int channelId) {
+        if (!validatePullHashesReply(msg))
+            return;
+
+        msg.getHashes().forEach((seq, hash) -> {
+            if (receivedHashes.containsKey(seq)) {
+                receivedHashes.get(seq).put(view.getNode(msg.getNodeId()), hash);
+            }
+            var prePrepare = prePreparesLog.get(seq);
+            if (prePrepare != null && prePrepare.getRequest() != null && requestConfirmedValid(prePrepare.getRequest())) {
+                var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq,
+                        prePrepare.getRequest().getDigest(), prePrepare.getRequest());
+                // don't need to sign this prePrepare since it won't be shared
+                prePreparesLog.put(seq, newPrePrepare);
+            }
+        });
+
+        commitRequests();
     }
 
     // --------------------------------------- Notification Handlers ------------------------------------------
@@ -323,20 +374,20 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void processNewViewMessage(NewViewMessage msg) {
-        var nextLeader = view.nextLeader();
+        var nextLeader = view.leaderInView(msg.getNewViewNumber());
 
         msg.getPrePrepares().forEach(prePrepare -> {
             var oldPrePrepare = prePreparesLog.get(prePrepare.getSeq());
-            if (oldPrePrepare == null)
-                prePreparesLog.put(prePrepare.getSeq(), prePrepare);
-            else
-                prePreparesLog.put(prePrepare.getSeq(), new PrePrepareMessage(prePrepare.getViewNumber(), prePrepare));
+            if (oldPrePrepare != null)
+                prePrepare.setRequest(oldPrePrepare.getRequest());
+            prePreparesLog.put(prePrepare.getSeq(), prePrepare);
 
             preparesLog.put(prePrepare.getSeq(), new HashSet<>());
             commitsLog.put(prePrepare.getSeq(), new HashSet<>());
 
             if (!nextLeader.equals(self)) {
                 var prepareMessage = new PrepareMessage(prePrepare, self.id());
+                Crypto.signMessage(prepareMessage, key);
                 preparesLog.get(prePrepare.getSeq()).add(prepareMessage);
                 view.forEach(node -> {
                     if (!node.equals(self))
@@ -344,38 +395,103 @@ public class PBFTProtocol extends GenericProtocol {
                 });
             }
         });
-
-        pullNeededRequests(msg);
-
-        view.updateView(msg.getNewViewNumber(), nextLeader);
+        view.updateView(msg.getNewViewNumber());
         triggerNotification(new ViewChange(view));
 
         viewChangesLog.remove(msg.getNewViewNumber());
+        askedViewChanges.remove(msg.getNewViewNumber());
+
+        pullNeededRequests(msg);
     }
 
-    //TODO can optimize this by not asking for requests to only one replica
     private void pullNeededRequests(NewViewMessage msg) {
-        var needHashes = new HashSet<Integer>();
+        var neededHashes = new HashSet<Integer>();
         var neededRequests = new LinkedList<Integer>();
         for (int i = nextToExecute; i <= msg.maxS(); i++) {
             if (prePreparesLog.get(i) == null) {
                 // if don't have pre-prepare, need f (?) hashes from other replicas to prove reply is legit
                 neededRequests.add(i);
-                needHashes.add(i);
+                neededHashes.add(i);
             } else if (prePreparesLog.get(i).getRequest() == null) {
                 // if have pre-prepare but don't have request then just need the request (can compare to digest later)
                 neededRequests.add(i);
             }
         }
+        if (neededRequests.size() == 0)
+            return;
 
-        if (neededRequests.size() > 0) {
-            if (needHashes.size() > 0) {
-                // TODO ask for needed hashes from replicas that executed associated operation
-            }
-            var pullRequestsMessage = new PullRequestsMessage(neededRequests, self.id());
+        var requestsInNodes = requestsInNodes(msg);
+        var requestsToPullPerNode = requestsToPullPerNode(requestsInNodes, neededRequests);
+
+        requestsToPullPerNode.forEach((node, requests) -> {
+            var pullRequestsMessage = new PullRequestsMessage(requests, this.self.id());
             Crypto.signMessage(pullRequestsMessage, key);
-            sendMessage(pullRequestsMessage, view.nextLeader().host());
+            sendMessage(pullRequestsMessage, node.host());
+        });
+
+        requestsInNodes.forEach((node, pair) -> {
+            var lastExecuted = pair.getLeft();
+            var neededHashesForNode = neededHashes.stream()
+                    .filter(seq -> seq <= lastExecuted)
+                    .collect(Collectors.toSet());
+            neededHashesForNode.forEach(seq -> receivedHashes.put(seq, new HashMap<>()));
+            var pullHashMessage = new PullHashesMessage(neededHashesForNode, this.self.id());
+            Crypto.signMessage(pullHashMessage, key);
+            sendMessage(pullHashMessage, node.host());
+        });
+    }
+
+    // first element of pair is seq of last executed operation of each node, second is seqs they prepared
+    private Map<Node, Pair<Integer, Set<Integer>>> requestsInNodes(NewViewMessage msg) {
+        var requestsInNodes = new HashMap<Node, Pair<Integer, Set<Integer>>>();
+        for (var viewChange: msg.getViewChanges()) {
+            var node = view.getNode(viewChange.getNodeId());
+            if (!node.equals(self)) {
+                var lastExecuted = viewChange.getLastExecuted();
+                var prepared = new HashSet<>(viewChange.getPreparedProofs().keySet());
+                requestsInNodes.put(node, Pair.of(lastExecuted, prepared));
+            }
         }
+        return requestsInNodes;
+    }
+
+    //TODO can optimize this to pull requests not from one replica only
+    private Map<Node, Set<Integer>> requestsToPullPerNode(Map<Node, Pair<Integer, Set<Integer>>> requestsInNodes, List<Integer> neededRequests) {
+        var requestsToPullPerNode = new HashMap<Node, Set<Integer>>();
+
+        for (var entry: requestsInNodes.entrySet()) {
+            var node = entry.getKey();
+            var lastExecuted = entry.getValue().getLeft();
+            var prepared = entry.getValue().getRight();
+
+            var requestsToPull = neededRequests.stream().filter(seq -> seq <= lastExecuted || prepared.contains(seq))
+                    .collect(Collectors.toCollection(HashSet::new));
+            if (requestsToPull.size() > 0) {
+                requestsToPullPerNode.put(node, requestsToPull);
+                neededRequests.removeAll(requestsToPull);
+                if (neededRequests.size() == 0)
+                    break;
+            }
+        }
+
+        return requestsToPullPerNode;
+    }
+
+    private boolean requestConfirmedValid(ProposeRequest request) {
+        var receivedHashesOfRequest = receivedHashes.get(seq);
+        if (receivedHashesOfRequest == null || receivedHashesOfRequest.size() < f + 1)
+            return false;
+
+        int matchingDigests = 0;
+        var requestHash = request.getDigest();
+        for (var hash : receivedHashesOfRequest.values()) {
+            if (Arrays.equals(requestHash, hash)) {
+                matchingDigests++;
+                if (matchingDigests >= f + 1)
+                    return true;
+            }
+        }
+        return false;
     }
 
     private Map<Integer, PreparedProof> calculatePreparedProofs() {
@@ -404,6 +520,10 @@ public class PBFTProtocol extends GenericProtocol {
                     Utils.bytesToHex(msg.getDigest()) + " != " + Utils.bytesToHex(msg.getRequest().getDigest()));
             return false;
         }
+        if (!SignaturesHelper.checkSignature(msg.getRequest().getBlock(), msg.getRequest().getSignature(), view.getPrimary().publicKey())) {
+            logger.warn("PrePrepareMessage: Invalid request signature: " + msg.getSeq());
+            return false;
+        }
         if (!Crypto.checkSignature(msg, view.getPrimary().publicKey())) {
             logger.warn("PrePrepareMessage: Invalid signature: " + msg.getSeq());
             return false;
@@ -412,7 +532,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private boolean validatePrepare(PrepareMessage msg) {
-        //TODO there might be a problem that it will reject prepares from view changes because it didn't change in time,
+        //TODO there might be a problem that it will reject prepares and commits from view changes because it didn't change in time,
         // ignore for now because i don't know how to solve that rn :)
         if (msg.getViewNumber() != view.getViewNumber()) {
             logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
@@ -437,7 +557,7 @@ public class PBFTProtocol extends GenericProtocol {
         return true;
     }
 
-    private boolean validateViewChangeMessage(ViewChangeMessage msg) {
+    private boolean validateViewChange(ViewChangeMessage msg) {
         if (msg.getNewViewNumber() <= view.getViewNumber()) {
             logger.warn("ViewChangeMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
             return false;
@@ -453,7 +573,7 @@ public class PBFTProtocol extends GenericProtocol {
         return true;
     }
 
-    private boolean validateNewViewMessage(NewViewMessage msg) {
+    private boolean validateNewView(NewViewMessage msg) {
         if (msg.getNewViewNumber() <= view.getViewNumber()) {
             logger.warn("NewViewMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
             return false;
@@ -468,6 +588,38 @@ public class PBFTProtocol extends GenericProtocol {
         }
         if (!msg.prePreparesValid(view.getPrimary().publicKey(), this.f)) {
             logger.warn("NewViewMessage: Invalid pre-prepare messages: " + msg.getNewViewNumber());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePullRequests(PullRequestsMessage msg) {
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("PullRequestsMessage: Invalid signature: " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePullRequestsReply(PullRequestsReplyMessage msg) {
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("PullRequestsReplyMessage: Invalid signature: " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePullHashes(PullHashesMessage msg) {
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("PullHashesMessage: Invalid signature: " + msg.getNodeId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validatePullHashesReply(PullHashesReplyMessage msg) {
+        if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+            logger.warn("PushHashesReplyMessage: Invalid signature: " + msg.getNodeId());
             return false;
         }
         return true;

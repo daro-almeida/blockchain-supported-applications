@@ -39,7 +39,7 @@ public class PBFTPredicates {
      *  sequence number, and digest.
      */
     public static boolean committed(int f, PrePrepareMessage prePrepare, Set<PrepareMessage> prepares, Set<CommitMessage> commits) {
-        if (prePrepare == null || prepares == null || prepares.size() < 2 * f + 1 || commits == null || commits.size() < 2 * f + 1)
+        if (prePrepare == null || prepares == null || prepares.size() < 2 * f || commits == null || commits.size() < 2 * f + 1)
             return false;
 
         var viewNumber = prePrepare.getViewNumber();

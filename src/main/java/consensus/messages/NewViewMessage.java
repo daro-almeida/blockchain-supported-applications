@@ -9,6 +9,7 @@ import utils.Crypto;
 import java.io.IOException;
 import java.security.PublicKey;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -58,6 +59,10 @@ public class NewViewMessage extends SignedProtoMessage {
         //TODO this ((might)) be a scuffed way to do this, basically we are recreating the prePrepareMessages and see if
         // they are the same as the ones we received
         return prePrepares.equals(PBFTUtils.newPrePrepareMessages(newViewNumber, viewChanges, f));
+    }
+
+    public Set<ViewChangeMessage> getViewChanges() {
+        return viewChanges;
     }
 
     public static final SignedMessageSerializer<NewViewMessage> serializer = new SignedMessageSerializer<>() {

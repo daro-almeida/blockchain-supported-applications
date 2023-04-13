@@ -16,9 +16,10 @@ public class PrePrepareMessage extends ProtoMessage {
 
 	public final static short MESSAGE_ID = 101;
 
-	private final int viewNumber, seq;
+	private final int viewNumber;
+	private final int seq;
 	private final byte[] digest;
-	private final ProposeRequest request;
+	private ProposeRequest request;
 	private byte[] signature;
 
 	public PrePrepareMessage(int viewNumber, int seq, byte[] digest, ProposeRequest request) {
@@ -36,10 +37,6 @@ public class PrePrepareMessage extends ProtoMessage {
 
 	public PrePrepareMessage(int viewNumber, int seq) {
 		this(viewNumber, seq, null, null);
-	}
-
-	public PrePrepareMessage(int newViewNumber, PrePrepareMessage prepareMessage) {
-		this(newViewNumber, prepareMessage.seq, prepareMessage.digest, prepareMessage.request, prepareMessage.signature);
 	}
 
 	private PrePrepareMessage(int viewNumber, int seq, byte[] digest, ProposeRequest request, byte[] signature) {
@@ -62,6 +59,10 @@ public class PrePrepareMessage extends ProtoMessage {
 
 	public ProposeRequest getRequest() {
 		return request;
+	}
+
+	public void setRequest(ProposeRequest request) {
+		this.request = request;
 	}
 
 	public PrePrepareMessage nullifyRequest() {
