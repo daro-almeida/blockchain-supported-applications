@@ -65,7 +65,7 @@ public class PrePrepareMessage extends ProtoMessage {
 		this.request = request;
 	}
 
-	public PrePrepareMessage nullifyRequest() {
+	public PrePrepareMessage nullRequestPrePrepare() {
 		return new PrePrepareMessage(viewNumber, seq, digest, null, signature);
 	}
 

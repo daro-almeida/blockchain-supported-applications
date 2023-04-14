@@ -57,7 +57,8 @@ public class PBFTProtocol extends GenericProtocol {
     //seq, view
     private final Map<Integer, Set<Integer>> sentCommits = new HashMap<>();
     //view
-    private final Set<Integer> askedViewChanges = new HashSet<>();
+    private Integer askedViewChange = null;
+    private Integer pendingViewChange = null;
 
     private final PrivateKey key;
 
@@ -168,18 +169,35 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponSuspectLeaderRequest(SuspectLeader req, short sourceProto) {
-        if (req.getNewViewNumber() <= view.getViewNumber() || askedViewChanges.contains(req.getNewViewNumber()))
+        assert req.getCurrentView() <= view.getViewNumber();
+
+        if ((req.getCurrentView() < view.getViewNumber()) || // ignore unneeded requests
+            (askedViewChange != null && pendingViewChange == null) || // already asked and not pending
+            (askedViewChange != null && askedViewChange > pendingViewChange)) // already asked for new pending
             return;
 
-        askedViewChanges.add(req.getNewViewNumber());
+        int newViewNumber;
+        if (askedViewChange == null && pendingViewChange == null) {
+            newViewNumber = view.getViewNumber() + 1;
+        } else if (askedViewChange == null || askedViewChange < pendingViewChange) {
+            askedViewChange = pendingViewChange;
+            return;
+        } else { // asked == pending
+            newViewNumber = pendingViewChange + 1;
+        }
 
-        var viewChangeMessage = new ViewChangeMessage(req.getNewViewNumber(),
-                nextToExecute - 1, calculatePreparedProofs(), self.id());
+        askedViewChange = newViewNumber;
+        assert pendingViewChange == null || askedViewChange > pendingViewChange;
+
+        var viewChangeMessage = new ViewChangeMessage(newViewNumber, nextToExecute - 1,
+                calculatePreparedProofs(), self.id());
         Crypto.signMessage(viewChangeMessage, key);
 
-        var newLeader = view.leaderInView(req.getNewViewNumber());
-        if (!newLeader.equals(self))
-            sendMessage(viewChangeMessage, newLeader.host());
+        processViewChangeMessage(viewChangeMessage);
+        view.forEach(node -> {
+            if (!node.equals(self))
+                sendMessage(viewChangeMessage, node.host());
+        });
     }
 
     private void uponBlockReply(BlockReply reply, short sourceProto) {
@@ -204,6 +222,7 @@ public class PBFTProtocol extends GenericProtocol {
             if (!node.equals(self))
                 sendMessage(prepareMessage, node.host());
         });
+        seq = Math.max(seq, msg.getSeq() + 1);
     }
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
@@ -240,31 +259,10 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponViewChangeMessage(ViewChangeMessage msg, Host sender, short sourceProtocol, int channelId) {
-        if(!view.leaderInView(msg.getNewViewNumber()).equals(self) || !validateViewChange(msg))
+        if(!validateViewChange(msg))
             return;
 
-        viewChangesLog.computeIfAbsent(msg.getNewViewNumber(), k -> new HashSet<>()).add(msg);
-        var viewChanges = viewChangesLog.get(msg.getNewViewNumber());
-
-        if (viewChanges.size() >= 2*f) {
-            var primaryViewChange = new ViewChangeMessage(msg.getNewViewNumber(), nextToExecute - 1,
-                    calculatePreparedProofs(), self.id());
-            viewChanges.add(primaryViewChange);
-
-            Set<PrePrepareMessage> prePrepares = PBFTUtils.newPrePrepareMessages(msg.getNewViewNumber(), viewChanges, this.f);
-            prePrepares.forEach(prePrepare -> Crypto.signMessage(prePrepare, key));
-
-            var newViewMessage = new NewViewMessage(msg.getNewViewNumber(), viewChanges, prePrepares);
-            Crypto.signMessage(newViewMessage, key);
-
-            processNewViewMessage(newViewMessage) ;
-            view.forEach(node -> {
-                if (!node.equals(self))
-                    sendMessage(newViewMessage, node.host());
-            });
-
-            seq = newViewMessage.maxS() + 1;
-        }
+        processViewChangeMessage(msg);
     }
 
     private void uponNewViewMessage(NewViewMessage msg, Host sender, short sourceProtocol, int channelId) {
@@ -297,8 +295,7 @@ public class PBFTProtocol extends GenericProtocol {
         msg.getRequests().forEach((seq, request) -> {
             var prePrepare = prePreparesLog.get(seq);
             if (prePrepare == null && requestConfirmedValid(request)) {
-                var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq,
-                        request.getDigest(), request);
+                var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq, request.getDigest(), request);
                 // don't need to sign this prePrepare since it won't be shared
                 prePreparesLog.put(seq, newPrePrepare);
             } else if (prePrepare != null) {
@@ -373,6 +370,29 @@ public class PBFTProtocol extends GenericProtocol {
         }
     }
 
+    private void processViewChangeMessage(ViewChangeMessage msg) {
+        viewChangesLog.computeIfAbsent(msg.getNewViewNumber(), k -> new HashSet<>()).add(msg);
+        var viewChanges = viewChangesLog.get(msg.getNewViewNumber());
+
+        if (viewChanges.size() >= 2*f + 1) {
+            pendingViewChange = msg.getNewViewNumber();
+
+            if (view.leaderInView(msg.getNewViewNumber()).equals(self)) {
+                Set<PrePrepareMessage> prePrepares = PBFTUtils.newPrePrepareMessages(msg.getNewViewNumber(), viewChanges, this.f);
+                prePrepares.forEach(prePrepare -> Crypto.signMessage(prePrepare, key));
+
+                var newViewMessage = new NewViewMessage(msg.getNewViewNumber(), viewChanges, prePrepares);
+                Crypto.signMessage(newViewMessage, key);
+
+                processNewViewMessage(newViewMessage);
+                view.forEach(node -> {
+                    if (!node.equals(self))
+                        sendMessage(newViewMessage, node.host());
+                });
+            }
+        }
+    }
+
     private void processNewViewMessage(NewViewMessage msg) {
         var nextLeader = view.leaderInView(msg.getNewViewNumber());
 
@@ -399,7 +419,9 @@ public class PBFTProtocol extends GenericProtocol {
         triggerNotification(new ViewChange(view));
 
         viewChangesLog.remove(msg.getNewViewNumber());
-        askedViewChanges.remove(msg.getNewViewNumber());
+        askedViewChange = null;
+        pendingViewChange = null;
+        seq = msg.maxS() + 1;
 
         pullNeededRequests(msg);
     }
@@ -500,15 +522,19 @@ public class PBFTProtocol extends GenericProtocol {
             var seq = prepares.getKey();
             // if sent commits then must have prepared this request
             if (sentCommits.get(seq) != null && sentCommits.get(seq).contains(view.getViewNumber())) {
-                preparedProofs.put(seq, new PreparedProof(prePreparesLog.get(seq).nullifyRequest(), prepares.getValue()));
+                preparedProofs.put(seq, new PreparedProof(prePreparesLog.get(seq).nullRequestPrePrepare(), prepares.getValue()));
             }
         }
         return preparedProofs;
     }
 
     private boolean validatePrePrepare(PrePrepareMessage msg) {
-        if (msg.getViewNumber() != view.getViewNumber()) {
+        if (msg.getViewNumber() != view.getViewNumber() && pendingViewChange == null) {
             logger.warn("PrePrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (pendingViewChange != null && msg.getViewNumber() != pendingViewChange) {
+            logger.warn("PrePrepareMessage: Invalid view number when view change is pending: " + msg.getViewNumber() + " != " + pendingViewChange);
             return false;
         }
         if (prePreparesLog.containsKey(msg.getSeq())) {
@@ -532,10 +558,12 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private boolean validatePrepare(PrepareMessage msg) {
-        //TODO there might be a problem that it will reject prepares and commits from view changes because it didn't change in time,
-        // ignore for now because i don't know how to solve that rn :)
-        if (msg.getViewNumber() != view.getViewNumber()) {
+        if (msg.getViewNumber() != view.getViewNumber() && pendingViewChange == null) {
             logger.warn("PrepareMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (pendingViewChange != null && msg.getViewNumber() != pendingViewChange) {
+            logger.warn("PrepareMessage: Invalid view number when view change is pending: " + msg.getViewNumber() + " != " + pendingViewChange);
             return false;
         }
         if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
@@ -546,8 +574,12 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private boolean validateCommit(CommitMessage msg) {
-        if (msg.getViewNumber() != view.getViewNumber()) {
+        if (msg.getViewNumber() != view.getViewNumber() && pendingViewChange == null) {
             logger.warn("CommitMessage: Invalid view number: " + msg.getViewNumber() + " != " + view.getViewNumber());
+            return false;
+        }
+        if (pendingViewChange != null && msg.getViewNumber() != pendingViewChange) {
+            logger.warn("CommitMessage: Invalid view number when view change is pending: " + msg.getViewNumber() + " != " + pendingViewChange);
             return false;
         }
         if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {

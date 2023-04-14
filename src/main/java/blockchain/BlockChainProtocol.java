@@ -230,8 +230,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	public void handleLeaderSuspectTimer(LeaderSuspectTimer t, long timerId) {
 		//TODO check again if request is in the chain (not sure if this is necessary), if not send SuspectLeader to pbft
 
-		//TODO in some cases need to change to v+1 and some to v+2... fix later
-		sendRequest(new SuspectLeader(view.getViewNumber() + 1), PBFTProtocol.PROTO_ID);
+		sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */
