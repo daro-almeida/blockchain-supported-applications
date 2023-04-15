@@ -1,4 +1,4 @@
-package consensus.utils;
+package consensus;
 
 import java.security.PublicKey;
 import java.util.Map;

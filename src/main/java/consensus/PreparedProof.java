@@ -1,20 +1,15 @@
-package consensus.utils;
+package consensus;
 
 import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
 import io.netty.buffer.ByteBuf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pt.unl.fct.di.novasys.babel.generic.signed.InvalidFormatException;
-import pt.unl.fct.di.novasys.babel.generic.signed.NoSignaturePresentException;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
 
 import java.io.IOException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
-import java.security.SignatureException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;

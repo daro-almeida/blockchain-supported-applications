@@ -1,4 +1,4 @@
-package blockchain.utils;
+package blockchain.requests;
 
 import blockchain.requests.ClientRequest;
 

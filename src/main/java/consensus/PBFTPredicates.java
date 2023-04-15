@@ -1,4 +1,4 @@
-package consensus.utils;
+package consensus;
 
 import consensus.messages.CommitMessage;
 import consensus.messages.PrePrepareMessage;

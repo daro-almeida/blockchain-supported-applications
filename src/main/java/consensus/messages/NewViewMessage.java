@@ -1,6 +1,6 @@
 package consensus.messages;
 
-import consensus.utils.ViewChangeManager;
+import consensus.ViewChangeManager;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;

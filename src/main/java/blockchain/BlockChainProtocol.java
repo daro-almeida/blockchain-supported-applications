@@ -7,7 +7,7 @@ import blockchain.requests.BlockRequest;
 import blockchain.requests.ClientRequest;
 import blockchain.timers.CheckUnhandledRequestsPeriodicTimer;
 import blockchain.timers.LeaderSuspectTimer;
-import blockchain.utils.PendingRequest;
+import blockchain.requests.PendingRequest;
 import consensus.PBFTProtocol;
 import consensus.notifications.CommittedNotification;
 import consensus.notifications.InitializedNotification;

@@ -1,6 +1,6 @@
 package consensus.messages;
 
-import consensus.utils.PreparedProof;
+import consensus.PreparedProof;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
