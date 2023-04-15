@@ -1,6 +1,6 @@
 package consensus.messages;
 
-import consensus.utils.PBFTUtils;
+import consensus.utils.ViewChangeManager;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
@@ -9,7 +9,6 @@ import utils.Crypto;
 import java.io.IOException;
 import java.security.PublicKey;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -36,15 +35,7 @@ public class NewViewMessage extends SignedProtoMessage {
         return prePrepares;
     }
 
-    // min seq of operation at least 2f+1 replicas executed ((f+1)th element of array in ascending order)
-    public int minS(int f) {
-        return (int) viewChanges.stream().map(ViewChangeMessage::getLastExecuted).sorted(Integer::compareTo).toArray()[f];
-    }
 
-    // max prepared
-    public int maxS() {
-        return viewChanges.stream().map(ViewChangeMessage::maxPrepared).max(Integer::compareTo).orElse(-1);
-    }
 
     public boolean viewChangesValid(int f, Map<Integer, PublicKey> publicKeys) {
         return viewChanges.size() >= 2 * f + 1 &&
@@ -58,7 +49,7 @@ public class NewViewMessage extends SignedProtoMessage {
 
         //TODO this ((might)) be a scuffed way to do this, basically we are recreating the prePrepareMessages and see if
         // they are the same as the ones we received
-        return prePrepares.equals(PBFTUtils.newPrePrepareMessages(newViewNumber, viewChanges, f));
+        return prePrepares.equals(ViewChangeManager.newPrePrepareMessages(newViewNumber, viewChanges, f));
     }
 
     public Set<ViewChangeMessage> getViewChanges() {
