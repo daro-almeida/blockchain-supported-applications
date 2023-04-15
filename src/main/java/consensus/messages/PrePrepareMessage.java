@@ -7,6 +7,8 @@ import java.util.Objects;
 
 import consensus.requests.ProposeRequest;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.SignaturesHelper;
@@ -82,19 +84,12 @@ public class PrePrepareMessage extends ProtoMessage {
 	}
 
 	private byte[] getSignatureContentBytes() {
-		var byteArrayOutputStream = new ByteArrayOutputStream();
-		var outputStream = new DataOutputStream(byteArrayOutputStream);
-
-		try {
-			outputStream.writeInt(viewNumber);
-			outputStream.writeInt(seq);
-			if (digest != null)
-				byteArrayOutputStream.write(digest);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-
-		return byteArrayOutputStream.toByteArray();
+		var bb = Unpooled.buffer(8 + (digest != null ? digest.length : 0));
+		bb.writeInt(viewNumber);
+		bb.writeInt(seq);
+		if (digest != null)
+			bb.writeBytes(digest);
+		return ByteBufUtil.getBytes(bb);
 	}
 
 	public static final ISerializer<PrePrepareMessage> serializer = new ISerializer<>() {

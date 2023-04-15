@@ -156,6 +156,7 @@ public class PBFTProtocol extends GenericProtocol {
         var prePrepareMessage = new PrePrepareMessage(view.getViewNumber(), seq, req.getDigest(), req);
         prePreparesLog.put(seq, prePrepareMessage);
 
+        Crypto.signMessage(prePrepareMessage, key);
         view.forEach(node -> {
             if (!node.equals(self))
                 sendMessage(prePrepareMessage, node.host());
@@ -209,7 +210,9 @@ public class PBFTProtocol extends GenericProtocol {
 
     private void uponPrepareMessage(PrepareMessage msg, Host sender, short sourceProtocol, int channelId) {
         logger.trace("Received PrepareMessage: " + msg.getSeq() + " from " + msg.getNodeId());
-        if (!validatePrepare(msg) || sentCommits.get(msg.getSeq()).contains(msg.getViewNumber()))
+        boolean alreadySentCommits = sentCommits.containsKey(msg.getSeq()) &&
+                sentCommits.get(msg.getSeq()).contains(msg.getViewNumber());
+        if (!validatePrepare(msg) || alreadySentCommits)
             return;
 
         preparesLog.computeIfAbsent(msg.getSeq(), k -> new HashSet<>()).add(msg);

@@ -50,7 +50,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private Node self;
 	private View view;
-    private final int f;
+    private int f;
 
 	private final Map<UUID, Set<StartClientRequestSuspectMessage>> suspectMessages = new HashMap<>();
 	private final Set<UUID> suspectTimerStarted = new HashSet<>();
@@ -64,9 +64,6 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.leaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
 		this.requestTimeout = Long.parseLong(props.getProperty("request_timeout", "10000"));
 		this.liveTimeout = Long.parseLong(props.getProperty("live_timeout", "10000"));
-
-		this.f = (view.size() - 1) / 3;
-        assert this.f > 0;
 	}
 
 	@Override
@@ -105,6 +102,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		} else {
 			var message = new RedirectClientRequestMessage(req, signature, this.self.id());
 			Crypto.signMessage(message, this.key);
+
+			logger.info("Redirecting operation: " + req.getRequestId());
 			sendMessage(message, this.view.getPrimary().host());
 
 			pendingRequests.put(req.getRequestId(), new PendingRequest(req, signature, System.currentTimeMillis()));
@@ -148,6 +147,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.self = notif.getSelf();
 		this.key = notif.getKey();
 		this.view = notif.getView();
+		this.f = (view.size() - 1) / 3;
+		assert this.f > 0;
 
 		var peerChannel = notif.getPeerChannel();
 
@@ -176,8 +177,11 @@ public class BlockChainProtocol extends GenericProtocol {
 		if(!validateRedirectClientRequestMessage(msg))
 			return;
 
-		var propose = new ProposeRequest(msg.getRequest().generateByteRepresentation(), msg.getRequestSignature());
-		logger.info("Proposing operation: " + msg.getRequest().getRequestId());
+		//FIXME This assumes that a block only contains a single client request, okay for now implement many requests per block later
+		var requestBytes = msg.getRequest().generateByteRepresentation();
+		var signature = SignaturesHelper.generateSignature(msg.getRequest().generateByteRepresentation(), this.key);
+		var propose = new ProposeRequest(requestBytes, signature);
+		logger.info("Proposing redirected operation: " + msg.getRequest().getRequestId());
 		sendRequest(propose, PBFTProtocol.PROTO_ID);
 	}
 
