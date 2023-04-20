@@ -1,7 +1,7 @@
 package blockchain.requests;
 
-import blockchain.requests.ClientRequest;
+import blockchain.messages.RedirectClientRequestMessage;
 
-public record PendingRequest(ClientRequest request, byte[] signature, long timestamp) {
+public record PendingRequest(RedirectClientRequestMessage message, long timestamp) {
 
 }

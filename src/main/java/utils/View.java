@@ -59,7 +59,9 @@ public class View implements Iterable<Node> {
     }
 
     public Node leaderInView(int viewNumber) {
-        return nodes.get((firstPrimaryId + viewNumber) % nodes.size());
+        assert viewNumber >= 0;
+        var nodeId = (viewNumber % nodes.size()) + firstPrimaryId;
+        return nodes.get(nodeId);
     }
 
     public int size() {

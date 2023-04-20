@@ -359,6 +359,7 @@ public class PBFTProtocol extends GenericProtocol {
         var newViewMessage = viewChangeManager.processViewChangeMessage(msg, f);
         if (newViewMessage == null)
             return;
+        Crypto.signMessage(newViewMessage, key);
 
         processNewViewMessage(newViewMessage);
         view.forEach(node -> {
@@ -571,8 +572,9 @@ public class PBFTProtocol extends GenericProtocol {
             logger.warn("NewViewMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
             return false;
         }
-        if (!Crypto.checkSignature(msg, view.getPrimary().publicKey())) {
-            logger.warn("NewViewMessage: Invalid signature: " + view.getPrimary().id());
+        var newLeader = view.leaderInView(msg.getNewViewNumber());
+        if (!Crypto.checkSignature(msg, newLeader.publicKey())) {
+            logger.warn("NewViewMessage: Invalid signature: " + newLeader.id());
             return false;
         }
         if (!msg.viewChangesValid(f, view.publicKeys())) {

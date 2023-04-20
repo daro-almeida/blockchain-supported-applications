@@ -71,9 +71,9 @@ public class Crypto {
     public static boolean checkSignature(SignedProtoMessage msg, PublicKey key) {
         try {
             return msg.checkSignature(key);
-        } catch (InvalidFormatException | NoSignaturePresentException | NoSuchAlgorithmException | InvalidKeyException e) {
+        } catch (InvalidFormatException | NoSuchAlgorithmException | InvalidKeyException e) {
             throw new RuntimeException(e);
-        } catch (SignatureException e) {
+        } catch (SignatureException | NoSignaturePresentException e) {
             return false;
         }
     }
