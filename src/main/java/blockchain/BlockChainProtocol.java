@@ -61,7 +61,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private final Map<UUID, Set<StartClientRequestSuspectMessage>> suspectMessages = new HashMap<>();
 
-	public BlockChainProtocol(Properties props) throws NumberFormatException, UnknownHostException {
+	public BlockChainProtocol(Properties props) throws NumberFormatException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
 
 		//Read timers and timeouts configurations
@@ -281,12 +281,12 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleNoOpTimer(NoOpTimer timer, long l) {
-//		var noOpBytes = new byte[0];
-//		var signature = SignaturesHelper.generateSignature(noOpBytes, this.key);
-//		var propose = new ProposeRequest(noOpBytes, signature);
-//		logger.info("Proposing no-op");
-//		sendRequest(propose, PBFTProtocol.PROTO_ID);
-//		noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
+		var noOpBytes = new byte[0];
+		var signature = SignaturesHelper.generateSignature(noOpBytes, this.key);
+		var propose = new ProposeRequest(noOpBytes, signature);
+		logger.info("Proposing no-op");
+		sendRequest(propose, PBFTProtocol.PROTO_ID);
+		noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 	}
 
 	private void handleLeaderIdleTimer(LeaderIdleTimer timer, long l) {
@@ -358,6 +358,6 @@ public class BlockChainProtocol extends GenericProtocol {
     public void submitClientOperation(byte[] b) {
 		assert view != null;
 		var req = new ClientRequest(b);
-		//sendRequest(req, BlockChainProtocol.PROTO_ID);
+		sendRequest(req, BlockChainProtocol.PROTO_ID);
     }
 }
