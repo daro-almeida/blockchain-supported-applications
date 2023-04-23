@@ -1,4 +1,4 @@
-package app.messages.client.replies;
+package client.messages.client.replies;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -9,7 +9,7 @@ import pt.unl.fct.di.novasys.network.ISerializer;
 
 public class CheckOperationStatus extends ProtoMessage {
 
-	enum Status { UNKOWN, PENDING, EXECUTED, CANCELLED }
+	enum Status { UNKNOWN, PENDING, EXECUTED, CANCELLED }
 	
 	public final static short MESSAGE_ID = 307;
 	
