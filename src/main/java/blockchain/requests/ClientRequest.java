@@ -64,14 +64,13 @@ public class ClientRequest extends ProtoRequest {
 	}
 
 	public boolean checkSignature() {
-		ByteBuf buf = Unpooled.buffer();
-		try {
-			serializer.serialize(this, buf);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-		byte[] bytes = ByteBufUtil.getBytes(buf);
-		return SignaturesHelper.checkSignature(bytes, signature, publicKey);
+		ByteBuffer buf = ByteBuffer.allocate(16 + operation.length + publicKey.getEncoded().length);
+		buf.putLong(requestId.getMostSignificantBits());
+		buf.putLong(requestId.getLeastSignificantBits());
+		buf.put(operation);
+		buf.put(publicKey.getEncoded());
+
+		return SignaturesHelper.checkSignature(buf.array(), signature, publicKey);
 	}
 
 	public byte[] toBytes() {

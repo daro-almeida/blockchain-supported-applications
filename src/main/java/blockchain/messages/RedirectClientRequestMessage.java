@@ -32,7 +32,7 @@ public class RedirectClientRequestMessage extends SignedProtoMessage {
 
 		@Override
 		public void serializeBody(RedirectClientRequestMessage protoMessage, ByteBuf out) throws IOException {
-			Utils.byteArraySerializer.serialize(protoMessage.request.toBytes(), out);
+			ClientRequest.serializer.serialize(protoMessage.request, out);
 			out.writeInt(protoMessage.nodeId);
 		}
 
