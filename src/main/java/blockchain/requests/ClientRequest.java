@@ -1,11 +1,13 @@
 package blockchain.requests;
 
+import java.io.IOException;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
+import pt.unl.fct.di.novasys.network.ISerializer;
 
 public class ClientRequest extends ProtoRequest {
 
@@ -54,4 +56,21 @@ public class ClientRequest extends ProtoRequest {
 		bb.writeBytes(this.operation);
 		return ByteBufUtil.getBytes(bb);
 	}
+
+	public static ISerializer<ClientRequest> serializer = new ISerializer<ClientRequest>() {
+
+		@Override
+		public ClientRequest deserialize(ByteBuf in) throws IOException {
+			UUID id = new UUID(in.readLong(), in.readLong());
+			short s = in.readShort();
+			byte[] operation = new byte[s];
+			in.readBytes(operation);
+			return new ClientRequest(id, operation);
+		}
+
+		@Override
+		public void serialize(ClientRequest cr, ByteBuf out) throws IOException {
+			out.writeBytes(cr.generateByteRepresentation());
+		}
+    };
 }
