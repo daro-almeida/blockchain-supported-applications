@@ -11,6 +11,7 @@ public class ClientRequest extends ProtoRequest {
 
 	public static final short REQUEST_ID = 201;
 
+	//TODO: Add public key of client
 	private final UUID requestId;
 	private final byte[] operation;
 

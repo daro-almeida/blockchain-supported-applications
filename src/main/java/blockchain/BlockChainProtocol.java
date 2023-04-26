@@ -1,5 +1,17 @@
 package blockchain;
 
+import java.security.PrivateKey;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
@@ -16,8 +28,6 @@ import consensus.notifications.InitializedNotification;
 import consensus.notifications.ViewChange;
 import consensus.requests.ProposeRequest;
 import consensus.requests.SuspectLeader;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.network.data.Host;
@@ -25,10 +35,6 @@ import utils.Crypto;
 import utils.Node;
 import utils.SignaturesHelper;
 import utils.View;
-
-import java.net.UnknownHostException;
-import java.security.PrivateKey;
-import java.util.*;
 
 public class BlockChainProtocol extends GenericProtocol {
 
