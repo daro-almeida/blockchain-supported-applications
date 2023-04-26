@@ -9,14 +9,14 @@ import pt.unl.fct.di.novasys.network.ISerializer;
 public class Block  {
 
 
-    private final String hash;
-    private final String previousHash;
+    private final byte[] hash;
+    private final byte[] previousHash;
     private final int seqN;
     private final List<ClientRequest> operations;
-    public UUID replicaId; // identity of the replica that generated the block and a signature.
+    public int replicaId; // identity of the replica that generated the block and a signature.
 
 
-    public Block(String hash, String previousHash, int seqN, List<ClientRequest> operations, UUID replicaId) {
+    public Block(byte[] hash, byte[] previousHash, int seqN, List<ClientRequest> operations, int replicaId) {
         this.hash = hash;
         this.previousHash = previousHash;
         this.seqN = seqN;
@@ -24,11 +24,11 @@ public class Block  {
         this.replicaId = replicaId;
     }
 
-    public String getHash() {
+    public byte[] getHash() {
         return hash;
     }
 
-    public String getPreviousHash() {
+    public byte[] getPreviousHash() {
         return previousHash;
     }
 
@@ -40,7 +40,7 @@ public class Block  {
         return operations;
     }
 
-    public UUID getReplicaId() {
+    public int getReplicaId() {
         return replicaId;
     }
 

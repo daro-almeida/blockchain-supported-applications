@@ -1,4 +1,4 @@
-package app.messages.exchange.requests;
+package client.messages.exchange.requests;
 
 import java.io.IOException;
 import java.security.KeyFactory;

@@ -67,6 +67,9 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private final Map<UUID, Set<StartClientRequestSuspectMessage>> suspectMessages = new HashMap<>();
 
+	private final BlockChain blockChain;
+	private Block nextBlock;
+
 	public BlockChainProtocol(Properties props) throws NumberFormatException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
 
