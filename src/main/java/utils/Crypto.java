@@ -10,6 +10,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.*;
 import java.security.cert.CertificateException;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Properties;
 
 public class Crypto {
@@ -20,6 +22,8 @@ public class Crypto {
     public static final String KEY_STORE_PASSWORD_KEY = "key_store_password";
     public static final String TRUST_STORE_LOCATION_KEY = "trust_store";
     public static final String TRUST_STORE_PASSWORD_KEY = "trust_store_password";
+
+    private static KeyStore trustStore;
 
 
     public static PrivateKey getPrivateKey(String me, Properties props) throws
@@ -38,7 +42,21 @@ public class Crypto {
         return (PrivateKey) ks.getKey(me, keyStorePassword);
     }
 
+    public static PublicKey getPublicKeyFromBytes(byte[] publicKeyBytes) {
+        try {
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
+            // create an instance of the X509EncodedKeySpec class using the encoded bytes of the public key
+            X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(publicKeyBytes);
+            // create an instance of the PublicKey interface using the KeyFactory and the X509EncodedKeySpec
+            return keyFactory.generatePublic(publicKeySpec);
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static KeyStore getTruststore(Properties props) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
+        if (trustStore != null) return trustStore;
 
         String trustStoreLocation = props.getProperty(TRUST_STORE_LOCATION_KEY);
         char[] trustStorePassword = props.getProperty(TRUST_STORE_PASSWORD_KEY).toCharArray();
@@ -48,7 +66,13 @@ public class Crypto {
         try (FileInputStream fis = new FileInputStream(trustStoreLocation)) {
             ks.load(fis, trustStorePassword);
         }
+
+        trustStore = ks;
         return ks;
+    }
+
+    public static KeyStore getTruststore() {
+        return trustStore;
     }
 
     public static byte[] digest(byte[] bytes) {

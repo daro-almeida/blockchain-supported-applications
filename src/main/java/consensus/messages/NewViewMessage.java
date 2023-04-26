@@ -47,8 +47,6 @@ public class NewViewMessage extends SignedProtoMessage {
         if (!prePrepares.stream().allMatch(p -> Crypto.checkSignature(p, primaryPublicKey)))
             return false;
 
-        //TODO this ((might)) be a scuffed way to do this, basically we are recreating the prePrepareMessages and see if
-        // they are the same as the ones we received
         return prePrepares.equals(ViewChangeManager.newPrePrepareMessages(newViewNumber, viewChanges, f));
     }
 

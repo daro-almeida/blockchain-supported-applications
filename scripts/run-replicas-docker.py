@@ -21,7 +21,9 @@ if '__main__' == __name__:
             "-v", f"{cwd}/deploy/csd2223-proj1.jar:/usr/local/csd2223-proj1.jar",
             "-v", f"{cwd}/deploy/config.properties:/usr/local/config.properties",
             "-v", f"{cwd}/deploy/log4j2.xml:/usr/local/log4j2.xml",
-            "-v", f"{cwd}/deploy/crypto:/usr/local/crypto/",
+            "-v", f"{cwd}/deploy/crypto/:/usr/local/crypto/", #delete this line later and uncomment next ones
+            #"-v", f"{cwd}/deploy/crypto/node{i}.ks:/usr/local/crypto/node{i}.ks",
+            #"-v", f"{cwd}/deploy/crypto/truststore.ks:/usr/local/crypto/truststore.ks",
             "-v", f"{cwd}/logs:/usr/local/logs/",
             "-w", "/usr/local/",
             "openjdk:17",

@@ -66,6 +66,8 @@ public class PBFTProtocol extends GenericProtocol {
         var selfHost = new Host(InetAddress.getByName(props.getProperty(ADDRESS_KEY)),
                 Integer.parseInt(props.getProperty(PORT_KEY)));
         var selfCryptoName = props.getProperty(Crypto.CRYPTO_NAME_KEY);
+
+        //setup membership and keys
         try {
             var truststore = Crypto.getTruststore(props);
             this.self = new Node(id, selfHost, truststore.getCertificate(selfCryptoName).getPublicKey());

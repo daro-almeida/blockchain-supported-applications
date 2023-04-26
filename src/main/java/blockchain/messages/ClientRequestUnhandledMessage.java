@@ -1,34 +1,30 @@
 package blockchain.messages;
 
-import java.io.IOException;
-
 import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import utils.Utils;
 
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
+
 public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 
 	public final static short MESSAGE_ID = 202;
 
-	private final ClientRequest request;
-	private final byte[] requestSignature; // this is the request's signature signed by the client
+	private final Set<ClientRequest> requests;
 	private final int nodeId;
 
-	public ClientRequestUnhandledMessage(ClientRequest request, byte[] requestSignature, int nodeId) {
+	public ClientRequestUnhandledMessage(Set<ClientRequest> requests, int nodeId) {
 		super(ClientRequestUnhandledMessage.MESSAGE_ID);
-		this.request = request;
-		this.requestSignature = requestSignature;
+		this.requests = requests;
 		this.nodeId = nodeId;
 	}
 
-	public ClientRequest getRequest() {
-		return request;
-	}
-
-	public byte[] getRequestSignature() {
-		return requestSignature;
+	public Set<ClientRequest> getRequests() {
+		return requests;
 	}
 
 	public int getNodeId() {
@@ -39,19 +35,24 @@ public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 
 		@Override
 		public void serializeBody(ClientRequestUnhandledMessage protoMessage, ByteBuf out) throws IOException {
-			Utils.byteArraySerializer.serialize(protoMessage.request.generateByteRepresentation(), out);
-			Utils.byteArraySerializer.serialize(protoMessage.requestSignature, out);
+			out.writeInt(protoMessage.requests.size());
+			for (ClientRequest request : protoMessage.requests) {
+				Utils.byteArraySerializer.serialize(request.toBytes(), out);
+			}
 			out.writeInt(protoMessage.nodeId);
 
 		}
 
 		@Override
 		public ClientRequestUnhandledMessage deserializeBody(ByteBuf in) throws IOException {
-			byte[] requestBytes = Utils.byteArraySerializer.deserialize(in);
-			byte[] signature = Utils.byteArraySerializer.deserialize(in);
-			var request = ClientRequest.fromBytes(requestBytes);
+			int size = in.readInt();
+			Set<ClientRequest> requests = new HashSet<>();
+			for (int i = 0; i < size; i++) {
+				var request = ClientRequest.serializer.deserialize(in);
+				requests.add(request);
+			}
 			int nodeId = in.readInt();
-			return new ClientRequestUnhandledMessage(request, signature, nodeId);
+			return new ClientRequestUnhandledMessage(requests, nodeId);
 		}
 	};
 

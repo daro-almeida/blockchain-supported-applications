@@ -27,13 +27,13 @@ public class Utils {
 
     public static ISerializer<byte[]> byteArraySerializer = new ISerializer<>() {
         @Override
-        public void serialize(byte[] bytes, ByteBuf byteBuf) throws IOException {
+        public void serialize(byte[] bytes, ByteBuf byteBuf) {
             byteBuf.writeInt(bytes.length);
             byteBuf.writeBytes(bytes);
         }
 
         @Override
-        public byte[] deserialize(ByteBuf byteBuf) throws IOException {
+        public byte[] deserialize(ByteBuf byteBuf) {
             var len = byteBuf.readInt();
             var bytes = new byte[len];
             byteBuf.readBytes(bytes);
@@ -43,13 +43,13 @@ public class Utils {
 
     public static ISerializer<UUID> uuidSerializer = new ISerializer<UUID>() {
         @Override
-        public void serialize(UUID uuid, ByteBuf byteBuf) throws IOException {
+        public void serialize(UUID uuid, ByteBuf byteBuf) {
             byteBuf.writeLong(uuid.getMostSignificantBits());
             byteBuf.writeLong(uuid.getLeastSignificantBits());
         }
 
         @Override
-        public UUID deserialize(ByteBuf byteBuf) throws IOException {
+        public UUID deserialize(ByteBuf byteBuf) {
             var mostSigBits = byteBuf.readLong();
             var leastSigBits = byteBuf.readLong();
             return new UUID(mostSigBits, leastSigBits);
