@@ -22,6 +22,8 @@ public class Block {
     private final int replicaId; // identity of the replica that generated the block and its signature.
     private final List<ClientRequest> operations;
 
+    private byte[] signature;
+
     public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
         this.seqN = seqN;
@@ -83,7 +85,7 @@ public class Block {
     /*
      * Generates a signature for the block using the provided key. Owner of key should be that of the replica ID.
      */
-    public byte[] generateSignature(PrivateKey key) {
+    public void sign(PrivateKey key) {
         ByteBuf buf = Unpooled.buffer();
 
         try {
@@ -92,7 +94,7 @@ public class Block {
             throw new RuntimeException(e);
         }
 
-        return SignaturesHelper.generateSignature(buf.array(), key);
+        this.signature = SignaturesHelper.generateSignature(buf.array(), key);
     }
 
     public static ISerializer<Block> serializer = new ISerializer<>() {
