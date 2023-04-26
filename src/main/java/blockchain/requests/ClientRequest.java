@@ -1,12 +1,9 @@
 package blockchain.requests;
 
 import java.io.IOException;
-<<<<<<< Updated upstream
-=======
 import java.nio.ByteBuffer;
 import java.security.PrivateKey;
 import java.security.PublicKey;
->>>>>>> Stashed changes
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
@@ -14,12 +11,9 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
 import pt.unl.fct.di.novasys.network.ISerializer;
-<<<<<<< Updated upstream
-=======
 import utils.Crypto;
 import utils.SignaturesHelper;
 import utils.Utils;
->>>>>>> Stashed changes
 
 public class ClientRequest extends ProtoRequest {
 
@@ -46,6 +40,7 @@ public class ClientRequest extends ProtoRequest {
 		buf.putLong(requestId.getLeastSignificantBits());
 		buf.put(operation);
 		buf.put(publicKey.getEncoded());
+
 		this.signature = SignaturesHelper.generateSignature(buf.array(), privateKey);
 	}
 
@@ -89,24 +84,6 @@ public class ClientRequest extends ProtoRequest {
 		return ByteBufUtil.getBytes(buf);
 	}
 
-<<<<<<< Updated upstream
-	public static ISerializer<ClientRequest> serializer = new ISerializer<ClientRequest>() {
-
-		@Override
-		public ClientRequest deserialize(ByteBuf in) throws IOException {
-			UUID id = new UUID(in.readLong(), in.readLong());
-			short s = in.readShort();
-			byte[] operation = new byte[s];
-			in.readBytes(operation);
-			return new ClientRequest(id, operation);
-		}
-
-		@Override
-		public void serialize(ClientRequest cr, ByteBuf out) throws IOException {
-			out.writeBytes(cr.generateByteRepresentation());
-		}
-    };
-=======
 	public static final ISerializer<ClientRequest> serializer = new ISerializer<>() {
 		@Override
 		public void serialize(ClientRequest request, ByteBuf out) throws IOException {
@@ -126,5 +103,4 @@ public class ClientRequest extends ProtoRequest {
 			return new ClientRequest(requestId, operation, publicKey, signature);
 		}
 	};
->>>>>>> Stashed changes
 }

@@ -28,6 +28,10 @@ public class Utils {
     public static ISerializer<byte[]> byteArraySerializer = new ISerializer<>() {
         @Override
         public void serialize(byte[] bytes, ByteBuf byteBuf) {
+            if (bytes == null) {
+                byteBuf.writeInt(0);
+                return;
+            }
             byteBuf.writeInt(bytes.length);
             byteBuf.writeBytes(bytes);
         }
@@ -35,6 +39,7 @@ public class Utils {
         @Override
         public byte[] deserialize(ByteBuf byteBuf) {
             var len = byteBuf.readInt();
+            if (len == 0) return null;
             var bytes = new byte[len];
             byteBuf.readBytes(bytes);
             return bytes;

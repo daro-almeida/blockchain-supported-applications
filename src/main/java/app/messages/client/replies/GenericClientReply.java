@@ -1,4 +1,4 @@
-package client.messages.client.replies;
+package app.messages.client.replies;
 
 import java.io.IOException;
 import java.util.UUID;

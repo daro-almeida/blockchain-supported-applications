@@ -1,4 +1,4 @@
-package client.messages.client.requests;
+package app.messages.client.requests;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -25,7 +25,7 @@ public class Cancel extends SignedProtoMessage {
 		this.cID = cID;
 	}
 	
-	public final static SignedMessageSerializer<Cancel> serializer = new SignedMessageSerializer<Cancel>() {
+	public final static SignedMessageSerializer<Cancel> serializer = new SignedMessageSerializer<>() {
 
 		@Override
 		public void serializeBody(Cancel c, ByteBuf out) throws IOException {
@@ -51,8 +51,8 @@ public class Cancel extends SignedProtoMessage {
 			} catch (NoSuchAlgorithmException e) {
 				e.printStackTrace();
 			}
-			
-			return new Cancel(new UUID(msb,lsb), cID);
+
+			return new Cancel(new UUID(msb, lsb), cID);
 		}
 	};
 

@@ -56,8 +56,8 @@ public class PBFTProtocol extends GenericProtocol {
 
     private final PrivateKey key;
 
-    private int seq = 0;
-    private int nextToExecute = 0;
+    private int seq = 1;
+    private int nextToExecute = 1;
 
     public PBFTProtocol(Properties props) throws NumberFormatException, UnknownHostException {
         super(PBFTProtocol.PROTO_NAME, PBFTProtocol.PROTO_ID);
@@ -186,7 +186,7 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponBlockReply(BlockReply reply, short sourceProto) {
-        //FIXME when blockchain is implemented, implement here the logic in uponPullRequestsReplyMessage
+
     }
 
 
@@ -344,7 +344,7 @@ public class PBFTProtocol extends GenericProtocol {
                 if (request == null)
                     return; // need to wait for the request to arrive
 
-                triggerNotification(new CommittedNotification(request.getBlock(), request.getSignature()));
+                triggerNotification(new CommittedNotification(prePrepare.getSeq(), request.getBlock(), request.getSignature()));
                 logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
             }
 
