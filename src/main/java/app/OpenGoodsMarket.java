@@ -76,7 +76,6 @@ public class OpenGoodsMarket extends GenericProtocol {
     private void uponIssueWantMessage(IssueWant msg, Host host, short proto, int channel) {
     }
 
-
     private void uponDepositMessage(Deposit msg, Host host, short proto, int channel) {
     }
 

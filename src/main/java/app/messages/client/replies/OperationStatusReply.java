@@ -7,9 +7,9 @@ import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
-public class CheckOperationStatus extends ProtoMessage {
+public class OperationStatusReply extends ProtoMessage {
 
-	enum Status { UNKNOWN, PENDING, EXECUTED, CANCELLED }
+	public enum Status { UNKOWN, PENDING, EXECUTED, CANCELLED, REJECTED, FAILED }
 	
 	public final static short MESSAGE_ID = 307;
 	
@@ -17,21 +17,15 @@ public class CheckOperationStatus extends ProtoMessage {
 	private Status status;
 	private String data;
 	
-	public CheckOperationStatus(UUID rID) {
-		super(CheckOperationStatus.MESSAGE_ID);
-		this.rID = rID;
-		this.status = Status.UNKNOWN;
-		this.data = null;
-	}
-	public CheckOperationStatus(UUID rID, Status status) {
-		super(CheckOperationStatus.MESSAGE_ID);
+	public OperationStatusReply(UUID rID, Status status) {
+		super(OperationStatusReply.MESSAGE_ID);
 		this.rID = rID;
 		this.status = status;
 		this.data = null;
 	}
 
-	public CheckOperationStatus(UUID rID, Status status, String data) {
-		super(CheckOperationStatus.MESSAGE_ID);
+	public OperationStatusReply(UUID rID, Status status, String data) {
+		super(OperationStatusReply.MESSAGE_ID);
 		this.rID = rID;
 		this.status = status;
 		this.data = data;
@@ -61,10 +55,10 @@ public class CheckOperationStatus extends ProtoMessage {
 		this.data = data;
 	}
 
-	public static ISerializer<CheckOperationStatus> serializer = new ISerializer<CheckOperationStatus>() {
+	public static ISerializer<OperationStatusReply> serializer = new ISerializer<OperationStatusReply>() {
 
 		@Override
-		public void serialize(CheckOperationStatus t, ByteBuf out) throws IOException {
+		public void serialize(OperationStatusReply t, ByteBuf out) throws IOException {
 			out.writeLong(t.rID.getMostSignificantBits());
 			out.writeLong(t.rID.getLeastSignificantBits());
 			out.writeShort(t.status.ordinal());
@@ -78,17 +72,17 @@ public class CheckOperationStatus extends ProtoMessage {
 		}
 
 		@Override
-		public CheckOperationStatus deserialize(ByteBuf in) throws IOException {
+		public OperationStatusReply deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			short s = in.readShort();
 			short sl = in.readShort();
 			if(sl == 0)
-				return new CheckOperationStatus(new UUID(msb,lsb), Status.values()[s]);
+				return new OperationStatusReply(new UUID(msb,lsb), Status.values()[s]);
 			else {
 				byte[] dd = new byte[sl];
 				in.readBytes(dd);
-				return new CheckOperationStatus(new UUID(msb,lsb), Status.values()[s], new String(dd));
+				return new OperationStatusReply(new UUID(msb,lsb), Status.values()[s], new String(dd));
 			}
 		}
 	};
