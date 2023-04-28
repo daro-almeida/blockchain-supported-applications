@@ -1,0 +1,8 @@
+To build:
+    - you need Maven installed
+    - execute "mvn package" in the root folder
+    - a jar file will be placed in the "deploy" folder
+
+To run:
+    - in folder "deploy" execute:
+        java -Dlog4j.configurationFile=log4j2.xml -jar csd2223-client.jar
