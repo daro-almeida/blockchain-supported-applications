@@ -1,5 +1,6 @@
 package blockchain;
 
+import blockchain.messages.BlockSuspectMessage;
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
@@ -105,12 +106,14 @@ public class BlockChainProtocol extends GenericProtocol {
 			registerMessageHandler(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, this::handleClientRequestUnhandledMessage);
 			registerMessageHandler(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, this::handleRedirectClientRequestMessage);
 			registerMessageHandler(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, this::handleStartClientRequestSuspectMessage);
+			registerMessageHandler(peerChannel, BlockSuspectMessage.MESSAGE_ID, this::handleBlockSuspectMessage);
 		} catch (HandlerRegistrationException e) {
 			throw new RuntimeException(e);
 		}
 		registerMessageSerializer(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, ClientRequestUnhandledMessage.serializer);
 		registerMessageSerializer(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, RedirectClientRequestMessage.serializer);
 		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, StartClientRequestSuspectMessage.serializer);
+		registerMessageSerializer(peerChannel, BlockSuspectMessage.MESSAGE_ID, BlockSuspectMessage.serializer);
 
 		if (this.view.getPrimary().equals(this.self)) {
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout + START_INTERVAL);
@@ -291,6 +294,10 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 
 		processSuspectsIds(unhandledRequestsHere, msg.getNodeId());
+	}
+
+	private void handleBlockSuspectMessage(BlockSuspectMessage msg, Host host, short protoID, int channel) {
+		//TODO
 	}
 
 	/* ----------------------------------------------- ------------- ------------------------------------------ */

@@ -102,31 +102,31 @@ public class PrePrepareMessage extends ProtoMessage {
 
 			byteBuf.writeInt(prePrepareMessage.viewNumber);
 			byteBuf.writeInt(prePrepareMessage.seq);
-			Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
 
 			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
 			if (prePrepareMessage.request != null) {
-				byteBuf.writeByte(1);
+				byteBuf.writeBoolean(true);
 				ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
 			}
 			else
-				byteBuf.writeByte(0);
+				byteBuf.writeBoolean(false);
+
+			Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
 		}
 
 		@Override
 		public PrePrepareMessage deserialize(ByteBuf byteBuf) throws IOException {
 			int viewNumber = byteBuf.readInt();
 			int seq = byteBuf.readInt();
-			byte[] signature = Utils.byteArraySerializer.deserialize(byteBuf);
 
 			byte[] digest = Utils.byteArraySerializer.deserialize(byteBuf);
-			byte hasRequest = byteBuf.readByte();
-			if (hasRequest == 1) {
-				ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
-				return new PrePrepareMessage(viewNumber, seq, digest, request, signature);
-			}
-			else
-				return new PrePrepareMessage(viewNumber, seq, digest, null, signature);
+			ProposeRequest request = null;
+			if (byteBuf.readBoolean())
+				request = ProposeRequest.serializer.deserialize(byteBuf);
+
+			byte[] signature = Utils.byteArraySerializer.deserialize(byteBuf);
+
+			return new PrePrepareMessage(viewNumber, seq, digest, request, signature);
 		}
 	};
 
