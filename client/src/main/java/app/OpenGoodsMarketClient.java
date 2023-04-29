@@ -72,7 +72,7 @@ public class OpenGoodsMarketClient {
     public final static String APP_SERVER_PROTO = "server_proto";
     private short application_proto_number;
     
-    public final static String REFRESH_TIMER = "check_requests_timeout";
+    public final static String REFRESH_TIMER = "check_requests_period";
     public final static String OPERATION_TIMEOUT = "operation_timeout";
     
     public final static String KEY_STORE_FILE = "key_store";

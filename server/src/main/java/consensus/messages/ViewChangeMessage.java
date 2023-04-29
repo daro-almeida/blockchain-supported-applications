@@ -55,19 +55,16 @@ public class ViewChangeMessage extends SignedProtoMessage {
     }
 
     private boolean preparedProofsValid(int f, Map<Integer, PublicKey> publicKeys) {
-        for (PreparedProof proof : preparedProofs.values()) {
-            if (!proof.isValid(f, publicKeys))
-                return false;
-        }
-        return true;
-    }
-
-    private boolean committedProofValid(int f, Map<Integer, PublicKey> publicKeys) {
-        return committedProof.isValid(f, publicKeys);
+        // key matches seq in proof and proof is valid
+        return preparedProofs.entrySet().stream()
+                .allMatch(entry -> entry.getKey() == entry.getValue().getPrePrepare().getSeq() &&
+                        entry.getValue().isValid(f, publicKeys));
     }
 
     public boolean isValid(int f, Map<Integer, PublicKey> publicKeys) {
-        return committedProofValid(f, publicKeys) && preparedProofsValid(f, publicKeys);
+        return lastExecuted == committedProof.getSeq() &&
+                committedProof.isValid(f, publicKeys) &&
+                preparedProofsValid(f, publicKeys);
     }
 
     public Map<Integer, PreparedProof> getPreparedProofs() {
@@ -96,7 +93,6 @@ public class ViewChangeMessage extends SignedProtoMessage {
             CommittedProof.serializer.serialize(viewChangeMessage.committedProof, byteBuf);
             byteBuf.writeInt(viewChangeMessage.preparedProofs.size());
             for (Map.Entry<Integer, PreparedProof> entry : viewChangeMessage.preparedProofs.entrySet()) {
-                byteBuf.writeInt(entry.getKey());
                 PreparedProof.serializer.serialize(entry.getValue(), byteBuf);
             }
         }
@@ -110,8 +106,8 @@ public class ViewChangeMessage extends SignedProtoMessage {
             int size = byteBuf.readInt();
             Map<Integer, PreparedProof> preparedProofs = new HashMap<>();
             for (int i = 0; i < size; i++) {
-                int seqNum = byteBuf.readInt();
                 PreparedProof preparedProof = PreparedProof.serializer.deserialize(byteBuf);
+                int seqNum = preparedProof.getPrePrepare().getSeq();
                 preparedProofs.put(seqNum, preparedProof);
             }
             return new ViewChangeMessage(newViewNumber, lastExecuted, committedProof, preparedProofs, nodeId);

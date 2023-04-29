@@ -27,7 +27,7 @@ def run_replicas(n: int):
             "-w", "/usr/local/",
             "openjdk:17",
 
-            "java", "-ea",
+            "java", "-Xmx8G", "-ea",
             "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=node{i}",
             "-jar", "server.jar",
             f"id={i}",
@@ -38,10 +38,12 @@ def run_replicas(n: int):
         ]
 
         subprocess.Popen(cmd)
-        # subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run_clients(n: int):
+    if n == 0:
+        return
+
     cmd = [
         "docker", "run",
         f"--name=open-goods_clients",
@@ -61,7 +63,6 @@ def run_clients(n: int):
         "-jar", "clients.jar",
         f"clients={n}"
     ]
-
     subprocess.Popen(cmd)
 
 

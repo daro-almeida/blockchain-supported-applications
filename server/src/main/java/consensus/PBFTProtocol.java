@@ -576,7 +576,7 @@ public class PBFTProtocol extends GenericProtocol {
             return false;
         }
         if (!msg.isValid(f, view.publicKeys())) {
-            logger.warn("ViewChangeMessage: Invalid prepared proofs: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
+            logger.warn("ViewChangeMessage: Invalid view change: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
             return false;
         }
         return true;

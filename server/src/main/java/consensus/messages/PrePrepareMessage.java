@@ -96,33 +96,37 @@ public class PrePrepareMessage extends ProtoMessage {
 
 		@Override
 		public void serialize(PrePrepareMessage prePrepareMessage, ByteBuf byteBuf) throws IOException {
+			// if signature is null throw, digest and request can be null, if digest is null request has to be null
+			if (prePrepareMessage.signature == null)
+				throw new IOException("PrePrepareMessage signature is null");
+
 			byteBuf.writeInt(prePrepareMessage.viewNumber);
 			byteBuf.writeInt(prePrepareMessage.seq);
-			if (prePrepareMessage.digest != null)
-				Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
+			Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
 
-			if (prePrepareMessage.signature != null) {
-				Utils.byteArraySerializer.serialize(prePrepareMessage.signature, byteBuf);
-			} else {
-				throw new RuntimeException("PrePrepareMessage signature is null");
-			}
-
-			if (prePrepareMessage.request != null)
+			Utils.byteArraySerializer.serialize(prePrepareMessage.digest, byteBuf);
+			if (prePrepareMessage.request != null) {
+				byteBuf.writeByte(1);
 				ProposeRequest.serializer.serialize(prePrepareMessage.request, byteBuf);
+			}
+			else
+				byteBuf.writeByte(0);
 		}
 
 		@Override
 		public PrePrepareMessage deserialize(ByteBuf byteBuf) throws IOException {
-			int viewN = byteBuf.readInt();
+			int viewNumber = byteBuf.readInt();
 			int seq = byteBuf.readInt();
-			byte[] digest = Utils.byteArraySerializer.deserialize(byteBuf);
 			byte[] signature = Utils.byteArraySerializer.deserialize(byteBuf);
 
-			if (byteBuf.readableBytes() == 0)
-				return new PrePrepareMessage(viewN, seq, digest, null, signature);
-
-			ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
-			return new PrePrepareMessage(viewN, seq, digest, request, signature);
+			byte[] digest = Utils.byteArraySerializer.deserialize(byteBuf);
+			byte hasRequest = byteBuf.readByte();
+			if (hasRequest == 1) {
+				ProposeRequest request = ProposeRequest.serializer.deserialize(byteBuf);
+				return new PrePrepareMessage(viewNumber, seq, digest, request, signature);
+			}
+			else
+				return new PrePrepareMessage(viewNumber, seq, digest, null, signature);
 		}
 	};
 

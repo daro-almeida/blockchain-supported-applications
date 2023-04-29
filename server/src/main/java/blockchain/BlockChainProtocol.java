@@ -38,8 +38,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	private static final short PROTO_ID = 200;
     private static final int START_INTERVAL = 2000;
 
-	public static final String PERIOD_CHECK_REQUESTS = "check_requests_timeout";
-	public static final String SUSPECT_LEADER_TIMEOUT = "leader_timeout";
+	public static final String PERIOD_CHECK_REQUESTS = "check_requests_period";
+	public static final String SUSPECT_LEADER_TIMEOUT = "suspect_leader_timeout";
 
 	private static final Logger logger = LogManager.getLogger(BlockChainProtocol.class);
 
@@ -72,7 +72,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
 		this.suspectLeaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
 		this.requestTimeout = Long.parseLong(props.getProperty("request_timeout", "3000"));
-		this.liveTimeout = Long.parseLong(props.getProperty("live_timeout", "5000"));
+		this.liveTimeout = Long.parseLong(props.getProperty("leader_live_timeout", "5000"));
 		this.noOpTimeout = Long.parseLong(props.getProperty("noop_timeout", "2500"));
 	}
 
