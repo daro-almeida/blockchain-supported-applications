@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 public class BlockChainProtocol extends GenericProtocol {
 
 	private static final String PROTO_NAME = "blockchain";
-	private static final short PROTO_ID = 200;
+	public static final short PROTO_ID = 200;
     private static final int START_INTERVAL = 2000;
 
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_period";

@@ -34,6 +34,10 @@ public class Deposit extends SignedProtoMessage{
 		this.amount = a;	
 	}
 
+	public byte[] getSignature() {
+		return signature;
+	}
+
 	
 	public final static SignedMessageSerializer<Deposit> serializer = new SignedMessageSerializer<Deposit>() {
 

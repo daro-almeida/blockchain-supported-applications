@@ -1,7 +1,9 @@
 package app;
 
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -24,6 +26,9 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import app.measurements.exporter.JSONArrayMeasurementsExporter;
+import app.measurements.exporter.JSONMeasurementsExporter;
+import app.measurements.exporter.MeasurementsExporter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -84,7 +89,8 @@ public class OpenGoodsMarketClient {
     
     public final static String STATS_PERIOD = "report_period";
     private long report_period; //miliseconds;
-    
+	private final MeasurementsExporter export = new JSONArrayMeasurementsExporter(new FileOutputStream("measurements/measurements.json"));
+
     private long operation_refresh_timer;
     private long operation_timeout;
     
@@ -140,14 +146,20 @@ public class OpenGoodsMarketClient {
     	
 		while(true) {
 			try { Thread.sleep(this.report_period); } catch (Exception e) {} //Every 20 seconds
-			
-			
+
 			wallclock += this.report_period;
 			long pendingOps = 0;
 			for(ClientInstance ci: clients) {
 				pendingOps += ci.pending.size();
 			}
-			System.out.println(wallclock + "ms :" + m.getSummary() + " (" + pendingOps + " pending operations)");
+			try {
+				m.exportMeasurements(export);
+				export.write("pendingOps", "pendingOps", pendingOps);
+				export.close();
+
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 
@@ -401,7 +413,7 @@ public class OpenGoodsMarketClient {
 			
 			this.pending = new HashMap<UUID,Long>();
 			
-			wallets.put(this.identity, new Float(0));
+			wallets.put(this.identity, 0F);
 			
 			this.r = new Random(System.currentTimeMillis());
 			
