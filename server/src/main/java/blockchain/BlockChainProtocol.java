@@ -38,7 +38,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private static final String PROTO_NAME = "blockchain";
 	public static final short PROTO_ID = 200;
-    private static final int START_INTERVAL = 2000;
+	private static final int START_INTERVAL = 2000;
 
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_period";
 	public static final String SUSPECT_LEADER_TIMEOUT = "suspect_leader_timeout";
@@ -56,6 +56,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private long leaderIdleTimer = -1;
 	private long noOpTimer = -1;
+	private long forceBlockTimer = -1;
 	private final Map<UUID, Long> leaderSuspectTimers = new HashMap<>();
 
 	// <requestId, (request, timestamp)>
@@ -153,7 +154,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		assert this.view != null;
 
 		byte[] request = req.toBytes();
-
+		// verfificar se o request n e repetido
 		if (this.view.getPrimary().equals(this.self)) {
 			// FIXME this is simulating signing block for now
 			byte[] signature = SignaturesHelper.generateSignature(request, this.key);
@@ -190,8 +191,8 @@ public class BlockChainProtocol extends GenericProtocol {
 			BlockReply r = new BlockReply(blocksWithSignatures, this.self.id());
 			sendReply(r, PBFTProtocol.PROTO_ID);
 		} else {
-			//what here?
-			
+			// what here?
+
 		}
 
 	}
@@ -242,6 +243,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	// TODO later implement this for receiving a Block
+	// verficar assinatura do block na notif
+	// ver se no-op e repetido
 	private void handleCommittedNotification(CommittedNotification notif, short protoID) {
 		// TODO substitute for checking for NoOpBlock later
 		if (Arrays.equals(notif.getBlock(), new byte[0])) {
@@ -253,7 +256,17 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		// TODO check if any requests (in Block later) are repeated and valid
+		// TODO check if any requests (in Block later) are repeated and invalid
+		// TODO se for invalid e foi feito pelo lider? then suspect
+		if (!blockChain.validateBlock(notif.getBlock())) {
+			logger.info("Received invalid block");
+			if (this.self.id() == this.view.getPrimary().id()) {
+				// send suspect message
+				sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+
+			}
+			return;
+		}
 
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
@@ -303,7 +316,10 @@ public class BlockChainProtocol extends GenericProtocol {
 		if (!validateRedirectClientRequestMessage(msg))
 			return;
 		// TODO check if requests are repeated
-
+		if(blockChain.containsRequest(msg.getRequest())){
+			logger.warn("Received invalid request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
+			return;
+		}
 		var requestBytes = msg.getRequest().toBytes();
 		// FIXME this is simulating signing block for now
 		var signature = SignaturesHelper.generateSignature(requestBytes, this.key);
@@ -349,7 +365,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		Set<UUID> unhandledRequestsHere = msg.getRequestIds().stream()
-				.filter(request -> true) // FIXME check if request is already in the blockchain
+				.filter(req -> blockChain.containsRequest(req)) // FIXME check if request is already in the blockchain
 				.collect(Collectors.toSet());
 		if (unhandledRequestsHere.isEmpty())
 			return;
@@ -413,7 +429,8 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
 		logger.warn("Forcing block");
-
+		// Criar bloco com as ops q tenho e mandar para o pbft
+		new BlockRequest(null, PROTO_ID)
 		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
 
 	}

@@ -21,10 +21,21 @@ public class Block {
     private final int seqN;
     private final int consensusSeqN;
     private final int replicaId; // identity of the replica that generated the block and its signature.
+    //checkar ops repetidas
+    //checkar se assinatura das ops sao validas
     private final List<ClientRequest> operations;
 
     private byte[] signature;
 
+    public Block(byte[] previousHash, int seqN, int consensusSeqN, int replicaId) {
+        this.previousHash = previousHash;
+        this.seqN = seqN;
+        this.consensusSeqN = consensusSeqN;
+        this.operations = new ArrayList<>();
+        this.replicaId = replicaId;
+
+        this.hash = Crypto.digest(blockContentsWithoutHash());
+    }
     public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
         this.seqN = seqN;
@@ -75,10 +86,14 @@ public class Block {
         return replicaId;
     }
 
+    public void addOp(ClientRequest req) {
+        operations.add(req);
+    }
+
     /*
      * Includes everything but signature.
      */
-    private byte[] blockContents() {
+    public byte[] blockContents() {
         ByteBuffer buf = ByteBuffer.allocate(hash.length);
         buf.put(hash);
         var rest = blockContentsWithoutHash();
