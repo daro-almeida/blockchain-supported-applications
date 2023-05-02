@@ -5,9 +5,9 @@
             <PatternLayout pattern="%highlight{%level{length=1}[%d{HH:mm:ss,SSS}] [%t]%logger{0}:} %msg%n"/>
         </Console>
 
-        <!--File name="MyFile" fileName="${sys:logFilename}.log" append="false" immediateFlush="true">
+        <File name="MyFile" fileName="${sys:logFilename}.log" append="false" immediateFlush="true">
             <PatternLayout pattern="%level{length=1}[%d{HH:mm:ss,SSS}] [%t]%logger{0}: %msg%n"/>
-        </File-->
+        </File>
     </Appenders>
 
 
@@ -17,9 +17,9 @@
         <Logger level="info" name="pt.unl.fct.di.novasys.channel"/>
         <Logger level="info" name="pt.unl.fct.di.novasys.babel"/>
 
-        <Root level="DEBUG">
+        <Root level="debug">
             <AppenderRef ref="Console" level="info"/>
-            <!--AppenderRef ref="MyFile" level="info"/-->
+            <AppenderRef ref="MyFile" level="info"/>
         </Root>
     </Loggers>
 </Configuration>

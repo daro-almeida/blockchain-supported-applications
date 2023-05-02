@@ -24,43 +24,26 @@ public class ClientRequest extends ProtoRequest {
 	private final PublicKey publicKey;
 	private final byte[] signature;
 
-	public ClientRequest(byte[] operation, PublicKey publicKey, byte[] signature) {
-		this(UUID.randomUUID(), operation, publicKey, signature);
+	public ClientRequest(UUID id, byte[] operation, byte[] signature, PublicKey publicKey) {
+		super(ClientRequest.REQUEST_ID);
+		this.requestId = id;
+		this.operation = operation;
+		this.signature = signature;
+		this.publicKey = publicKey;
 	}
 
+	//TODO temporary constructor
 	public ClientRequest(byte[] operation, PublicKey publicKey, PrivateKey privateKey) {
 		super(ClientRequest.REQUEST_ID);
 
 		this.requestId = UUID.randomUUID();
 		this.operation = operation;
 		this.publicKey = publicKey;
-
-		ByteBuffer buf = ByteBuffer.allocate(16 + operation.length + publicKey.getEncoded().length);
-		buf.putLong(requestId.getMostSignificantBits());
-		buf.putLong(requestId.getLeastSignificantBits());
-		buf.put(operation);
-		buf.put(publicKey.getEncoded());
-
-		this.signature = SignaturesHelper.generateSignature(buf.array(), privateKey);
+		this.signature = SignaturesHelper.generateSignature(operation, privateKey);
 	}
 
-	private ClientRequest(UUID id, byte[] operation, PublicKey publicKey, byte[] signature) {
-		super(ClientRequest.REQUEST_ID);
-		this.requestId = id;
-		this.operation = operation;
-		this.publicKey = publicKey;
-		this.signature = signature;
-	}
 	public UUID getRequestId() {
 		return requestId;
-	}
-
-	public byte[] getOperation() {
-		return operation;
-	}
-
-	public PublicKey getPublicKey() {
-		return publicKey;
 	}
 
 	public boolean checkSignature() {
@@ -104,7 +87,7 @@ public class ClientRequest extends ProtoRequest {
 			byte[] publicKeyBytes = Utils.byteArraySerializer.deserialize(in);
 			byte[] signature = Utils.byteArraySerializer.deserialize(in);
 			var publicKey = Crypto.getPublicKeyFromBytes(publicKeyBytes);
-			return new ClientRequest(requestId, operation, publicKey, signature);
+			return new ClientRequest(requestId, operation, signature, publicKey);
 		}
 	};
 }

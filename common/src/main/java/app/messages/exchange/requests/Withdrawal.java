@@ -34,6 +34,9 @@ public class Withdrawal extends SignedProtoMessage{
 		this.amount = a;	
 	}
 
+	public byte[] getSignature() {
+		return signature;
+	}
 	
 	public final static SignedMessageSerializer<Withdrawal> serializer = new SignedMessageSerializer<Withdrawal>() {
 

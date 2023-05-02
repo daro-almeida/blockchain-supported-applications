@@ -13,6 +13,8 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.UUID;
 
+import blockchain.notifications.ExecutedOperation;
+import blockchain.requests.ClientRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -45,10 +47,13 @@ public class OpenGoodsMarket extends GenericProtocol {
     public static final String ADDRESS_KEY = "address";
     public static final String SERVER_PORT_KEY = "client_server_port";
 
-    public final static String PROTO_NAME = "OpenGoodsMarketProto";
+    public final static String PROTO_NAME = "OpenGoodsMarket";
     public final static short PROTO_ID = 500;
 
     private int clientChannel;
+
+    private final HashMap<UUID, OperationStatusReply.Status> opStatus = new HashMap<>();
+    private final HashMap<UUID, SignedProtoMessage> ops = new HashMap<>();
 
     public static void main(String[] args) throws InvalidParameterException, IOException,
             HandlerRegistrationException, ProtocolAlreadyExistsException, GeneralSecurityException {
@@ -76,19 +81,8 @@ public class OpenGoodsMarket extends GenericProtocol {
         pbft.init(props);
 
         babel.start();
-        logger.info("Babel has started...");
 
-        logger.info("Waiting 10s to start issuing requests.");
-
-        while(true) {
-            logger.info("System is running...");
-            try {
-                Thread.sleep(1000 * 60);
-            } catch (InterruptedException e) {
-                //Nothing to be done here...
-            }
-        }
-
+        logger.info("System is running...");
     }
 
     public OpenGoodsMarket(Properties props) throws IOException, ProtocolAlreadyExistsException,
@@ -144,16 +138,18 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         registerChannelEventHandler(clientChannel, ClientUpEvent.EVENT_ID, this::uponClientConnectionUp);
         registerChannelEventHandler(clientChannel, ClientDownEvent.EVENT_ID, this::uponClientConnectionDown);
+
+        subscribeNotification(ExecutedOperation.NOTIFICATION_ID, this::handleExecutedOperation);
     }
 
-
-    private HashMap<UUID, OperationStatusReply.Status> opers = new HashMap<>();
-    private HashMap<UUID, SignedProtoMessage> opers_body = new HashMap<>();
-
     public void handleIssueOfferMessage(IssueOffer io, Host from, short sourceProto, int channelID ) {
-        logger.info("Received IssueOffer (" + io.getRid() + " from " + from + "(" + io.getcID().toString() + ")");
-        opers.put(io.getRid(), OperationStatusReply.Status.PENDING);
-        opers_body.put(io.getRid(), io);
+        logger.info("Received IssueOffer (" + io.getRid() + " from " + from + "(client" + io.getcID() + ")");
+        opStatus.put(io.getRid(), OperationStatusReply.Status.PENDING);
+        ops.put(io.getRid(), io);
+
+        var signature = io.getSignature();
+//        var req = new ClientRequest(io.getRid(), ...)
+//        sendRequest(req, BlockChainProtocol.PROTO_ID);
 
         GenericClientReply ack = new GenericClientReply(io.getRid());
 
@@ -161,9 +157,9 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     public void handleIssueWantMessage(IssueWant iw, Host from, short sourceProto, int channelID ) {
-        logger.info("Received IssueWant (" + iw.getRid() + " from " + from + "(" + iw.getcID().toString() + ")");
-        opers.put(iw.getRid(), OperationStatusReply.Status.PENDING);
-        opers_body.put(iw.getRid(), iw);
+        logger.info("Received IssueWant (" + iw.getRid() + " from " + from + "(client" + iw.getcID() + ")");
+        opStatus.put(iw.getRid(), OperationStatusReply.Status.PENDING);
+        ops.put(iw.getRid(), iw);
 
         GenericClientReply ack = new GenericClientReply(iw.getRid());
 
@@ -172,9 +168,9 @@ public class OpenGoodsMarket extends GenericProtocol {
 
     public void handleCancelMessage(Cancel c, Host from, short sourceProto, int channelID ) {
         logger.info("Received Cancel for operation " + c.getrID() + " from " + from);
-        if(opers.containsKey(c.getrID())) {
-            opers.put(c.getrID(), OperationStatusReply.Status.CANCELLED);
-            opers_body.remove(c.getrID());
+        if(opStatus.containsKey(c.getrID())) {
+            opStatus.put(c.getrID(), OperationStatusReply.Status.CANCELLED);
+            ops.remove(c.getrID());
         }
 
         GenericClientReply ack = new GenericClientReply(c.getrID());
@@ -187,7 +183,7 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         OperationStatusReply osr = null;
 
-        Status s = opers.get(cos.getrID());
+        Status s = opStatus.get(cos.getrID());
 
         if(s != null) {
             switch (s) {
@@ -204,13 +200,13 @@ public class OpenGoodsMarket extends GenericProtocol {
                     osr = new OperationStatusReply(cos.getrID(), Status.PENDING);
                     int r = new Random(System.currentTimeMillis()).nextInt(100);
                     if(r >= 0 && r < 25) {
-                        opers.put(cos.getrID(), Status.EXECUTED);
+                        opStatus.put(cos.getrID(), Status.EXECUTED);
                     } else if(r >= 25 && r < 50) {
-                        opers.put(cos.getrID(), Status.FAILED);
+                        opStatus.put(cos.getrID(), Status.FAILED);
                     } else if(r >= 50 && r < 75) {
-                        opers.put(cos.getrID(), Status.REJECTED);
+                        opStatus.put(cos.getrID(), Status.REJECTED);
                     } else {
-                        opers.put(cos.getrID(), Status.EXECUTED);
+                        opStatus.put(cos.getrID(), Status.EXECUTED);
                     }
                     break;
                 case REJECTED:
@@ -231,9 +227,9 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     public void handleDepositMessage(Deposit d, Host from, short sourceProto, int channelID) {
-        logger.info("Received deposit of " + d.getAmount() + " to " + d.getClientID().toString() + " from the Exchange (" + from + ")");
-        opers.put(d.getRid(), OperationStatusReply.Status.PENDING);
-        opers_body.put(d.getRid(), d);
+        logger.info("Received deposit of " + d.getAmount() + " to client" + d.getClientID() + " from the Exchange (" + from + ")");
+        opStatus.put(d.getRid(), OperationStatusReply.Status.PENDING);
+        ops.put(d.getRid(), d);
 
         GenericClientReply ack = new GenericClientReply(d.getRid());
 
@@ -241,14 +237,18 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     public void handleWithdrawalMessage(Withdrawal w, Host from, short sourceProto, int channelID) {
-        logger.info("Received withdrawal of " + w.getAmount() + " to " + w.getClientID().toString() + " from the Exchange (" + from + ")");
+        logger.info("Received withdrawal of " + w.getAmount() + " to client" + w.getClientID() + " from the Exchange (" + from + ")");
 
-        opers.put(w.getRid(), OperationStatusReply.Status.PENDING);
-        opers_body.put(w.getRid(), w);
+        opStatus.put(w.getRid(), OperationStatusReply.Status.PENDING);
+        ops.put(w.getRid(), w);
 
         GenericClientReply ack = new GenericClientReply(w.getRid());
 
         sendMessage(clientChannel, ack, sourceProto, from, 0);
+    }
+
+    private void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
+        //TODO
     }
 
     private void uponClientConnectionUp(ClientUpEvent event, int channel) {

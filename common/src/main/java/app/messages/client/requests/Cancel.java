@@ -1,5 +1,9 @@
 package app.messages.client.requests;
 
+import io.netty.buffer.ByteBuf;
+import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
+import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+
 import java.io.IOException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -7,10 +11,6 @@ import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.UUID;
-
-import io.netty.buffer.ByteBuf;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 
 public class Cancel extends SignedProtoMessage {
 
@@ -23,6 +23,10 @@ public class Cancel extends SignedProtoMessage {
 		super(Cancel.MESSAGE_ID);
 		this.rID = rID;
 		this.cID = cID;
+	}
+
+	public byte[] getSignature() {
+		return signature;
 	}
 	
 	public final static SignedMessageSerializer<Cancel> serializer = new SignedMessageSerializer<Cancel>() {

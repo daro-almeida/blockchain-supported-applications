@@ -3,19 +3,21 @@ package blockchain.notifications;
 import blockchain.requests.ClientRequest;
 import pt.unl.fct.di.novasys.babel.generic.ProtoNotification;
 
+import java.util.UUID;
+
 public class ExecutedOperation extends ProtoNotification {
 
     public static final short NOTIFICATION_ID = 301;
 
-    private final ClientRequest request;
+    private final UUID requestId;
 
-    public ExecutedOperation(ClientRequest request) {
+    public ExecutedOperation(UUID requestId) {
         super(NOTIFICATION_ID);
 
-        this.request = request;
+        this.requestId = requestId;
     }
 
-    public ClientRequest getRequest() {
-        return request;
+    public UUID getRequestId() {
+        return requestId;
     }
 }

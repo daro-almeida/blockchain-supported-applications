@@ -8,6 +8,7 @@ server_server_base_port = 5000
 client_server_base_port = 6000
 
 cwd = os.getcwd()
+pause = 10
 
 
 def run_replicas(n: int):
@@ -55,6 +56,7 @@ def run_clients(n: int):
         "-v", f"{cwd}/client/deploy/log4j2.xml:/usr/local/log4j2.xml",
         "-v", f"{cwd}/client/deploy/crypto/:/usr/local/crypto/",
         "-v", f"{cwd}/logs:/usr/local/logs/",
+        "-v", f"{cwd}/measurements:/usr/local/measurements/",
         "-w", "/usr/local/",
         "openjdk:17",
 
@@ -77,8 +79,8 @@ if '__main__' == __name__:
 
     print(f"Starting {num_replicas} replicas")
     run_replicas(num_replicas)
-    print("Waiting 5s to start clients")
-    time.sleep(5)
+    print(f"Waiting {pause}s to start clients")
+    time.sleep(pause)
     print(f"Starting {num_clients} clients")
     run_clients(num_clients)
 
