@@ -3,6 +3,7 @@ package blockchain;
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
+import blockchain.notifications.ExecutedOperation;
 import blockchain.requests.BlockReply;
 import blockchain.requests.BlockRequest;
 import blockchain.requests.ClientRequest;
@@ -56,6 +57,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private long leaderIdleTimer = -1;
 	private long noOpTimer = -1;
+	private long forceBlockTimer = -1;
 	private final Map<UUID, Long> leaderSuspectTimers = new HashMap<>();
 
 	// <requestId, (request, timestamp)>
@@ -179,21 +181,14 @@ public class BlockChainProtocol extends GenericProtocol {
 	private void handleBlockRequest(BlockRequest req, short sourceProtoId) {
 		assert this.view != null;
 
-		if (this.view.getPrimary().equals(this.self)) {
-			var blocksWithSignatures = new HashMap<Integer, ProposeRequest>();
-			// TODO reply with block (sendReply) ok??????
-			req.getBlocksWanted().forEach(n -> {
-				Block b = blockChain.getBlock(n);
-				var proposeReq = new ProposeRequest(b.getHash(), b.getSignature());
-				blocksWithSignatures.put(n, proposeReq);
-			});
-			BlockReply r = new BlockReply(blocksWithSignatures, this.self.id());
-			sendReply(r, PBFTProtocol.PROTO_ID);
-		} else {
-			//what here?
-			
-		}
-
+		var blocksWithSignatures = new HashMap<Integer, ProposeRequest>();
+		req.getBlocksWanted().forEach(n -> {
+			Block b = blockChain.getBlock(n);
+			var proposeReq = new ProposeRequest(b.blockContents(), b.getSignature());
+			blocksWithSignatures.put(n, proposeReq);
+		});
+		BlockReply r = new BlockReply(blocksWithSignatures, this.self.id());
+		sendReply(r, PBFTProtocol.PROTO_ID);
 	}
 
 	/*
@@ -222,9 +217,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		});
 		leaderSuspectTimers.clear();
 
-		// TODO might issue repeated ones here which is a problem, if so need to get
-		// extra info from view change on
-		// requests that will be handled in new view by consensus itself
+		// TODO might issue repeated ones here which is a problem (minor issue ignore for now)
 		pendingRequests.forEach((reqId, pendingRequest) -> {
 			pendingRequest.setTimestamp(System.currentTimeMillis());
 			handleClientRequest(pendingRequest.request(), BlockChainProtocol.PROTO_ID);
@@ -254,6 +247,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		// TODO check if any requests (in Block later) are repeated and valid
+		//sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+
 
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
@@ -269,9 +264,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		logger.info("Committed: " + request.getRequestId());
-		pendingRequests.remove(request.getRequestId());
 
-		if (!this.view.getPrimary().equals(this.self)) {
+		//for request in block
+			pendingRequests.remove(request.getRequestId());
 			var requestSuspectTimer = leaderSuspectTimers.remove(request.getRequestId());
 			if (requestSuspectTimer != null) {
 				// all requests for this timer have been committed, so cancel it
@@ -279,10 +274,11 @@ public class BlockChainProtocol extends GenericProtocol {
 					cancelTimer(requestSuspectTimer);
 				}
 			}
+			triggerNotification(new ExecutedOperation(request));
 
-			cancelTimer(leaderIdleTimer);
-			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
-		}
+
+		cancelTimer(leaderIdleTimer);
+		leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
 	}
 
 	/*
@@ -414,7 +410,6 @@ public class BlockChainProtocol extends GenericProtocol {
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
 		logger.warn("Forcing block");
 
-		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
 
 	}
 
