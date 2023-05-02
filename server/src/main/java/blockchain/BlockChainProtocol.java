@@ -3,10 +3,12 @@ package blockchain;
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
+import blockchain.requests.BlockReply;
 import blockchain.requests.BlockRequest;
 import blockchain.requests.ClientRequest;
 import blockchain.requests.PendingRequest;
 import blockchain.timers.CheckUnhandledRequestsPeriodicTimer;
+import blockchain.timers.ForceBlockTimer;
 import blockchain.timers.LeaderIdleTimer;
 import blockchain.timers.LeaderSuspectTimer;
 import blockchain.timers.NoOpTimer;
@@ -36,7 +38,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private static final String PROTO_NAME = "blockchain";
 	private static final short PROTO_ID = 200;
-    private static final int START_INTERVAL = 2000;
+	private static final int START_INTERVAL = 2000;
 
 	public static final String PERIOD_CHECK_REQUESTS = "check_requests_period";
 	public static final String SUSPECT_LEADER_TIMEOUT = "suspect_leader_timeout";
@@ -50,6 +52,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	private final long requestTimeout;
 	private final long liveTimeout;
 	private final long noOpTimeout;
+	private final long forceBlockTimeout;
 
 	private long leaderIdleTimer = -1;
 	private long noOpTimer = -1;
@@ -60,6 +63,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	// <requestId, set<nodeId>>
 	private final Map<UUID, Set<Integer>> nodesSuspectedPerRequest = new HashMap<>();
 
+	private final BlockChain blockChain = new BlockChain();
+
 	private Node self;
 	private View view;
 	private int f;
@@ -67,13 +72,14 @@ public class BlockChainProtocol extends GenericProtocol {
 	public BlockChainProtocol(Properties props) throws NumberFormatException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
 
-		//Read timers and timeouts configurations
-		//TODO check timer values later
+		// Read timers and timeouts configurations
+		// TODO check timer values later
 		this.checkRequestsPeriod = Long.parseLong(props.getProperty(PERIOD_CHECK_REQUESTS));
 		this.suspectLeaderTimeout = Long.parseLong(props.getProperty(SUSPECT_LEADER_TIMEOUT));
 		this.requestTimeout = Long.parseLong(props.getProperty("request_timeout", "3000"));
 		this.liveTimeout = Long.parseLong(props.getProperty("leader_live_timeout", "5000"));
 		this.noOpTimeout = Long.parseLong(props.getProperty("noop_timeout", "2500"));
+		this.forceBlockTimeout = Long.parseLong(props.getProperty("force_block_timeout", "5000"));
 	}
 
 	@Override
@@ -81,10 +87,12 @@ public class BlockChainProtocol extends GenericProtocol {
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
 		registerRequestHandler(BlockRequest.REQUEST_ID, this::handleBlockRequest);
 
-		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID, this::handleCheckUnhandledRequestsPeriodicTimer);
+		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID,
+				this::handleCheckUnhandledRequestsPeriodicTimer);
 		registerTimerHandler(LeaderSuspectTimer.TIMER_ID, this::handleLeaderSuspectTimer);
 		registerTimerHandler(LeaderIdleTimer.TIMER_ID, this::handleLeaderIdleTimer);
 		registerTimerHandler(NoOpTimer.TIMER_ID, this::handleNoOpTimer);
+		registerTimerHandler(ForceBlockTimer.TIMER_ID, this::handleForceBlockTimer);
 
 		subscribeNotification(ViewChange.NOTIFICATION_ID, this::handleViewChangeNotification);
 		subscribeNotification(CommittedNotification.NOTIFICATION_ID, this::handleCommittedNotification);
@@ -102,38 +110,55 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		registerSharedChannel(peerChannel);
 		try {
-			registerMessageHandler(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, this::handleClientRequestUnhandledMessage);
-			registerMessageHandler(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, this::handleRedirectClientRequestMessage);
-			registerMessageHandler(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, this::handleStartClientRequestSuspectMessage);
+			registerMessageHandler(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID,
+					this::handleClientRequestUnhandledMessage);
+			registerMessageHandler(peerChannel, RedirectClientRequestMessage.MESSAGE_ID,
+					this::handleRedirectClientRequestMessage);
+			registerMessageHandler(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID,
+					this::handleStartClientRequestSuspectMessage);
 		} catch (HandlerRegistrationException e) {
 			throw new RuntimeException(e);
 		}
-		registerMessageSerializer(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID, ClientRequestUnhandledMessage.serializer);
-		registerMessageSerializer(peerChannel, RedirectClientRequestMessage.MESSAGE_ID, RedirectClientRequestMessage.serializer);
-		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID, StartClientRequestSuspectMessage.serializer);
+		registerMessageSerializer(peerChannel, ClientRequestUnhandledMessage.MESSAGE_ID,
+				ClientRequestUnhandledMessage.serializer);
+		registerMessageSerializer(peerChannel, RedirectClientRequestMessage.MESSAGE_ID,
+				RedirectClientRequestMessage.serializer);
+		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID,
+				StartClientRequestSuspectMessage.serializer);
 
 		if (this.view.getPrimary().equals(this.self)) {
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout + START_INTERVAL);
 		} else {
 			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout + START_INTERVAL);
 		}
-		setupPeriodicTimer(new CheckUnhandledRequestsPeriodicTimer(), checkRequestsPeriod + START_INTERVAL, checkRequestsPeriod);
+		setupPeriodicTimer(new CheckUnhandledRequestsPeriodicTimer(), checkRequestsPeriod + START_INTERVAL,
+				checkRequestsPeriod);
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ---------------------------------------------- REQUEST HANDLER ----------------------------------------- */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ---------------------------------------------- REQUEST HANDLER
+	 * -----------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
 
-	//TODO later implement this for processing new Blocks
+	// TODO later implement this for processing new Blocks
 	private void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
 
 		byte[] request = req.toBytes();
 
-		if(this.view.getPrimary().equals(this.self)) {
-			//FIXME this is simulating signing block for now
+		if (this.view.getPrimary().equals(this.self)) {
+			// FIXME this is simulating signing block for now
 			byte[] signature = SignaturesHelper.generateSignature(request, this.key);
-			//FIXME This assumes that a block only contains a single client request, implement many requests per block later
+			// FIXME This assumes that a block only contains a single client request,
+			// implement many requests per block later
 			var propose = new ProposeRequest(request, signature);
 			logger.info("Proposing: " + req.getRequestId());
 			sendRequest(propose, PBFTProtocol.PROTO_ID);
@@ -152,26 +177,53 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleBlockRequest(BlockRequest req, short sourceProtoId) {
-		//TODO reply with block (sendReply)
+		assert this.view != null;
+
+		if (this.view.getPrimary().equals(this.self)) {
+			var blocksWithSignatures = new HashMap<Integer, ProposeRequest>();
+			// TODO reply with block (sendReply) ok??????
+			req.getBlocksWanted().forEach(n -> {
+				Block b = blockChain.getBlock(n);
+				var proposeReq = new ProposeRequest(b.getHash(), b.getSignature());
+				blocksWithSignatures.put(n, proposeReq);
+			});
+			BlockReply r = new BlockReply(blocksWithSignatures, this.self.id());
+			sendReply(r, PBFTProtocol.PROTO_ID);
+		} else {
+			//what here?
+			
+		}
+
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ------------------------------------------- NOTIFICATION HANDLER --------------------------------------- */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ------------------------------------------- NOTIFICATION HANDLER
+	 * ---------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
 
 	private void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
 		// consensus shouldn't send this if the view is already the same number
 		assert notif.getView().getViewNumber() > this.view.getViewNumber();
 
-		logger.warn("New view change (" + notif.getView().getViewNumber() + ") primary: node" + notif.getView().getPrimary().id());
+		logger.warn("New view change (" + notif.getView().getViewNumber() + ") primary: node"
+				+ notif.getView().getPrimary().id());
 		this.view = notif.getView();
 
-		leaderSuspectTimers.keySet().forEach( reqId -> {
+		leaderSuspectTimers.keySet().forEach(reqId -> {
 			cancelTimer(leaderSuspectTimers.get(reqId));
 		});
 		leaderSuspectTimers.clear();
 
-		//TODO might issue repeated ones here which is a problem, if so need to get extra info from view change on
+		// TODO might issue repeated ones here which is a problem, if so need to get
+		// extra info from view change on
 		// requests that will be handled in new view by consensus itself
 		pendingRequests.forEach((reqId, pendingRequest) -> {
 			pendingRequest.setTimestamp(System.currentTimeMillis());
@@ -189,9 +241,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 	}
 
-	//TODO later implement this for receiving a Block
+	// TODO later implement this for receiving a Block
 	private void handleCommittedNotification(CommittedNotification notif, short protoID) {
-		//TODO substitute for checking for NoOpBlock later
+		// TODO substitute for checking for NoOpBlock later
 		if (Arrays.equals(notif.getBlock(), new byte[0])) {
 			logger.info("Received no-op");
 			if (!this.view.getPrimary().equals(this.self)) {
@@ -201,9 +253,9 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		//TODO check if any requests (in Block later) are repeated and valid
+		// TODO check if any requests (in Block later) are repeated and valid
 
-		//don't need to do this mess after switching to block
+		// don't need to do this mess after switching to block
 		ClientRequest request = null;
 		try {
 			request = ClientRequest.serializer.deserialize(Unpooled.wrappedBuffer(notif.getBlock()));
@@ -233,39 +285,50 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ---------------------------------------------- MESSAGE HANDLER ----------------------------------------- */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ---------------------------------------------- MESSAGE HANDLER
+	 * -----------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
 
-	private void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol, int channelId) {
-		if(!validateRedirectClientRequestMessage(msg))
+	private void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol,
+			int channelId) {
+		if (!validateRedirectClientRequestMessage(msg))
 			return;
-		//TODO check if requests are repeated
+		// TODO check if requests are repeated
 
 		var requestBytes = msg.getRequest().toBytes();
-		//FIXME this is simulating signing block for now
+		// FIXME this is simulating signing block for now
 		var signature = SignaturesHelper.generateSignature(requestBytes, this.key);
-		//FIXME This assumes that a block only contains a single client request, implement many requests per block later
+		// FIXME This assumes that a block only contains a single client request,
+		// implement many requests per block later
 		var propose = new ProposeRequest(requestBytes, signature);
 		logger.info("Proposing redirected from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
 		sendRequest(propose, PBFTProtocol.PROTO_ID);
 		cancelTimer(noOpTimer);
 	}
 
-	private void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender, short sourceProtocol, int channelId) {
-		if(!validateHandleClientRequestUnhandledMessage(msg))
+	private void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender,
+			short sourceProtocol, int channelId) {
+		if (!validateHandleClientRequestUnhandledMessage(msg))
 			return;
 
 		logger.warn("Received unhandled requests from node{}: {} ", msg.getNodeId(), msg.getRequests());
 
 		Set<UUID> unhandledRequestsHere = msg.getRequests().stream()
-				.filter(request -> true) //FIXME check if request is already in the blockchain
+				.filter(request -> true) // FIXME check if request is already in the blockchain
 				.map(ClientRequest::getRequestId)
 				.collect(Collectors.toSet());
 
 		if (unhandledRequestsHere.isEmpty())
 			return;
-
 
 		var suspectMessage = new StartClientRequestSuspectMessage(unhandledRequestsHere, this.self.id());
 		Crypto.signMessage(suspectMessage, this.key);
@@ -279,13 +342,14 @@ public class BlockChainProtocol extends GenericProtocol {
 		});
 	}
 
-	private void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender, short sourceProtocol, int channelId) {
-		if(!validateHandleStartClientRequestSuspectMessage(msg)){
+	private void handleStartClientRequestSuspectMessage(StartClientRequestSuspectMessage msg, Host sender,
+			short sourceProtocol, int channelId) {
+		if (!validateHandleStartClientRequestSuspectMessage(msg)) {
 			return;
 		}
 
 		Set<UUID> unhandledRequestsHere = msg.getRequestIds().stream()
-				.filter(request -> true) //FIXME check if request is already in the blockchain
+				.filter(request -> true) // FIXME check if request is already in the blockchain
 				.collect(Collectors.toSet());
 		if (unhandledRequestsHere.isEmpty())
 			return;
@@ -293,14 +357,23 @@ public class BlockChainProtocol extends GenericProtocol {
 		processSuspectsIds(unhandledRequestsHere, msg.getNodeId());
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ----------------------------------------------- TIMER HANDLER ------------------------------------------ */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- TIMER HANDLER
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
 
 	private void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
 		Set<ClientRequest> unhandledRequests = new HashSet<>();
-		pendingRequests.forEach( (reqId, req) -> {
-			if(req.timestamp() <= System.currentTimeMillis() - requestTimeout &&
+		pendingRequests.forEach((reqId, req) -> {
+			if (req.timestamp() <= System.currentTimeMillis() - requestTimeout &&
 					!leaderSuspectTimers.containsKey(reqId)) {
 				logger.warn("Request " + reqId + " unhandled for too long!");
 				unhandledRequests.add(req.request());
@@ -338,9 +411,25 @@ public class BlockChainProtocol extends GenericProtocol {
 		sendRequest(suspectLeader, PBFTProtocol.PROTO_ID);
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-	/* ----------------------------------------------- AUXILIARY FNS ------------------------------------------ */
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
+	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
+		logger.warn("Forcing block");
+
+		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
+
+	}
+
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- AUXILIARY FNS
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
 
 	private void processSuspectsIds(Set<UUID> requestIds, int nodeId) {
 		logger.warn("Received valid suspect message for requests " + requestIds + " from node" + nodeId);
@@ -348,7 +437,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		Set<UUID> suspectedRequests = new HashSet<>();
 		for (var reqId : requestIds) {
 			nodesSuspectedPerRequest.computeIfAbsent(reqId, (k -> new HashSet<>())).add(nodeId);
-			if(nodesSuspectedPerRequest.get(reqId).size() < f + 1 || leaderSuspectTimers.containsKey(reqId))
+			if (nodesSuspectedPerRequest.get(reqId).size() < f + 1 || leaderSuspectTimers.containsKey(reqId))
 				return;
 			suspectedRequests.add(reqId);
 		}
@@ -369,11 +458,11 @@ public class BlockChainProtocol extends GenericProtocol {
 	private boolean validateRedirectClientRequestMessage(RedirectClientRequestMessage msg) {
 		var request = msg.getRequest();
 
-		if(!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
+		if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
 			logger.warn("RedirectClientRequestMessage: Invalid signature from node" + msg.getNodeId());
 			return false;
 		}
-		if(!request.checkSignature()) {
+		if (!request.checkSignature()) {
 			logger.warn("RedirectClientRequestMessage: Invalid request signature from node" + msg.getNodeId());
 			return false;
 		}
@@ -390,13 +479,13 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private boolean validateHandleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg) {
-		if(!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())){
+		if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
 			logger.warn("ClientRequestUnhandledMessage: Invalid signature: " + msg.getNodeId());
 			return false;
 		}
 
 		for (var request : msg.getRequests()) {
-			if(!request.checkSignature()) {
+			if (!request.checkSignature()) {
 				logger.warn("ClientRequestUnhandledMessage: Invalid request signature: " + msg.getNodeId());
 				return false;
 			}
@@ -404,14 +493,23 @@ public class BlockChainProtocol extends GenericProtocol {
 		return true;
 	}
 
-	/* ----------------------------------------------- ------------- ------------------------------------------ */
-    /* ----------------------------------------------- APP INTERFACE ------------------------------------------ */
-    /* ----------------------------------------------- ------------- ------------------------------------------ */
-    public void submitClientOperation(byte[] b) {
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- APP INTERFACE
+	 * ------------------------------------------
+	 */
+	/*
+	 * ----------------------------------------------- -------------
+	 * ------------------------------------------
+	 */
+	public void submitClientOperation(byte[] b) {
 		assert view != null;
 
-		//TODO temporary
-		//generate key pair
+		// TODO temporary
+		// generate key pair
 		KeyPair keyPair = null;
 		try {
 			keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
@@ -423,5 +521,5 @@ public class BlockChainProtocol extends GenericProtocol {
 		var req = new ClientRequest(b, publicKey, privateKey);
 
 		sendRequest(req, BlockChainProtocol.PROTO_ID);
-    }
+	}
 }

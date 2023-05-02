@@ -35,8 +35,9 @@ public class Block {
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    private Block(byte[] hash, byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId,
-                  byte[] signature) {
+    private Block(byte[] hash, byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations,
+            int replicaId,
+            byte[] signature) {
         this.hash = hash;
         this.previousHash = previousHash;
         this.seqN = seqN;
@@ -52,6 +53,10 @@ public class Block {
 
     public byte[] getPreviousHash() {
         return previousHash;
+    }
+
+    public byte[] getSignature() {
+        return signature;
     }
 
     public int getSeqN() {
@@ -99,14 +104,16 @@ public class Block {
     }
 
     /*
-     * Generates a signature for the block using the provided key. Owner of key should be that of the replica ID.
+     * Generates a signature for the block using the provided key. Owner of key
+     * should be that of the replica ID.
      */
     public void sign(PrivateKey key) {
         this.signature = SignaturesHelper.generateSignature(blockContents(), key);
     }
 
     /*
-     * Verifies the signature of the block using the provided public key. Public key should be that of the replica ID.
+     * Verifies the signature of the block using the provided public key. Public key
+     * should be that of the replica ID.
      */
     public boolean checkSignature(PublicKey publicKey) {
         return SignaturesHelper.checkSignature(blockContents(), signature, publicKey);
