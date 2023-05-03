@@ -1,6 +1,10 @@
 package consensus;
 
+import blockchain.BlockChainProtocol;
 import blockchain.requests.BlockReply;
+import blockchain.requests.BlockRequest;
+import blockchain.requests.HashReply;
+import blockchain.requests.HashRequest;
 import consensus.messages.*;
 import consensus.notifications.CommittedNotification;
 import consensus.notifications.InitializedNotification;
@@ -13,6 +17,7 @@ import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
+import pt.unl.fct.di.novasys.babel.generic.ProtoReply;
 import pt.unl.fct.di.novasys.channel.tcp.MultithreadedTCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.TCPChannel;
 import pt.unl.fct.di.novasys.channel.tcp.events.*;
@@ -112,6 +117,7 @@ public class PBFTProtocol extends GenericProtocol {
         registerRequestHandler(SuspectLeader.REQUEST_ID, this::uponSuspectLeaderRequest);
 
         registerReplyHandler(BlockReply.REPLY_ID, this::uponBlockReply);
+        registerReplyHandler(HashReply.REPLY_ID, this::uponHashReply);
 
         registerMessageHandler(peerChannel, PrePrepareMessage.MESSAGE_ID, this::uponPrePrepareMessage);
         registerMessageHandler(peerChannel, PrepareMessage.MESSAGE_ID, this::uponPrepareMessage);
@@ -191,7 +197,21 @@ public class PBFTProtocol extends GenericProtocol {
     }
 
     private void uponBlockReply(BlockReply reply, short sourceProto) {
-        //TODO
+        assert !reply.getBlocksWithSignatures().isEmpty();
+
+        logger.debug("Replying to node{} blocks: {}", reply.getRequesterId(), reply.getBlocksWithSignatures().keySet());
+        var replyMsg = new PullRequestsReplyMessage(reply.getBlocksWithSignatures(), self.id());
+        Crypto.signMessage(replyMsg, key);
+        sendMessage(replyMsg, view.getNode(reply.getRequesterId()).host());
+    }
+
+    private void uponHashReply(HashReply reply, short sourceProto) {
+        assert !reply.getHashes().isEmpty();
+
+        logger.debug("Replying to node{} hashes: {}", reply.getRequesterId(), reply.getHashes().keySet());
+        var replyMsg = new PullHashesReplyMessage(reply.getHashes(), self.id());
+        Crypto.signMessage(replyMsg, key);
+        sendMessage(replyMsg, view.getNode(reply.getRequesterId()).host());
     }
 
 
@@ -268,30 +288,25 @@ public class PBFTProtocol extends GenericProtocol {
         if (!validatePullRequests(msg))
             return;
 
-        //FIXME while we don't have a blockchain, reply with pre-prepares
-        var requests = new HashMap<Integer, ProposeRequest>();
-        msg.getNeededRequests().forEach(seq -> {
-            var prePrepare = prePreparesLog.get(seq);
-            if (prePrepare != null && prePrepare.getRequest() != null)
-                requests.put(seq, prePrepare.getRequest());
-        });
-        var reply = new PullRequestsReplyMessage(requests, this.self.id());
-        Crypto.signMessage(reply, key);
-        sendMessage(reply, view.getNode(msg.getNodeId()).host());
+        sendRequest(new BlockRequest(msg.getNeededRequests(), msg.getNodeId()), BlockChainProtocol.PROTO_ID);
     }
 
     private void uponPullRequestsReplyMessage(PullRequestsReplyMessage msg, Host host, short sourceProtocol, int channelId) {
         if (!validatePullRequestsReply(msg))
             return;
 
+        logger.debug("Received from node{} requests: {}", msg.getNodeId(), msg.getRequests().keySet());
         msg.getRequests().forEach((seq, request) -> {
             var prePrepare = prePreparesLog.get(seq);
             if (prePrepare == null && requestConfirmedValid(request)) {
                 var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq, request.getDigest(), request);
                 // don't need to sign this prePrepare since it won't be shared
                 prePreparesLog.put(seq, newPrePrepare);
-            } else if (prePrepare != null) {
+                receivedHashes.remove(seq);
+            } else if (prePrepare != null && Arrays.equals(prePrepare.getDigest(), request.getDigest())) {
                 prePrepare.setRequest(request);
+            } else {
+                logger.error("Received invalid request from node{}: {}", msg.getNodeId(), seq);
             }
         });
 
@@ -302,33 +317,27 @@ public class PBFTProtocol extends GenericProtocol {
         if (!validatePullHashes(msg))
             return;
 
-        //FIXME while we don't have a blockchain, get them from pre-prepares
-        var hashes = new HashMap<Integer, byte[]>();
-        msg.getNeededHashes().forEach(seq -> {
-            var prePrepare = prePreparesLog.get(seq);
-            if (prePrepare != null)
-                hashes.put(seq, prePrepare.getRequest().getDigest());
-        });
-
-        var reply = new PullHashesReplyMessage(hashes, this.self.id());
-        Crypto.signMessage(reply, key);
-        sendMessage(reply, view.getNode(msg.getNodeId()).host());
+        sendRequest(new HashRequest(msg.getNeededHashes(), msg.getNodeId()), BlockChainProtocol.PROTO_ID);
     }
 
     private void uponPullHashReplyMessage(PullHashesReplyMessage msg, Host host, short sourceProtocol, int channelId) {
         if (!validatePullHashesReply(msg))
             return;
 
+        logger.debug("Received from node{} hashes: {}", msg.getNodeId(), msg.getHashes().keySet());
         msg.getHashes().forEach((seq, hash) -> {
             if (receivedHashes.containsKey(seq)) {
                 receivedHashes.get(seq).put(view.getNode(msg.getNodeId()), hash);
-            }
+            } else //didn't ask for this or got enough
+                return;
+
             var prePrepare = prePreparesLog.get(seq);
             if (prePrepare != null && prePrepare.getRequest() != null && requestConfirmedValid(prePrepare.getRequest())) {
                 var newPrePrepare = new PrePrepareMessage(view.getViewNumber(), seq,
                         prePrepare.getRequest().getDigest(), prePrepare.getRequest());
                 // don't need to sign this prePrepare since it won't be shared
                 prePreparesLog.put(seq, newPrePrepare);
+                receivedHashes.remove(seq);
             }
         });
 
@@ -352,14 +361,31 @@ public class PBFTProtocol extends GenericProtocol {
                 triggerNotification(new CommittedNotification(prePrepare.getSeq(), request.getBlock(), request.getSignature()));
                 logger.trace("Committed request seq=" + nextToExecute + ", view=" + view.getViewNumber() + ": " + Utils.bytesToHex(request.getDigest()));
             }
+            if (viewChangeManager.shouldChangeView(nextToExecute))
+                changeView();
+
+
             prePrepare = prePreparesLog.get(++nextToExecute);
 
             //keep one of each of last executed to be able to generate committed proof for view change if needed
-            //FIXME: remove comment after implementing blockchain (no need to save requests)
-            //prePreparesLog.remove(nextToExecute - 2);
+            prePreparesLog.remove(nextToExecute - 2);
             preparesLog.remove(nextToExecute - 2);
             commitsLog.remove(nextToExecute - 2);
         }
+    }
+
+    private void changeView() {
+        Integer newViewNumber = viewChangeManager.newView();
+        assert newViewNumber != null && newViewNumber > view.getViewNumber();
+        view.updateView(newViewNumber);
+        triggerNotification(new ViewChange(view));
+    }
+
+    private void changeView(int newViewNumber) {
+        assert newViewNumber > view.getViewNumber();
+        viewChangeManager.newView(newViewNumber);
+        view.updateView(newViewNumber);
+        triggerNotification(new ViewChange(view));
     }
 
     private void processViewChangeMessage(ViewChangeMessage msg) {
@@ -402,21 +428,25 @@ public class PBFTProtocol extends GenericProtocol {
             }
         });
 
-        view.updateView(msg.getNewViewNumber());
-        //TODO might need to send requests that were able to be processed in new view here so lower layer knows what
-        // requests need to be re-proposed
-        triggerNotification(new ViewChange(view));
+        var maxSeq = ViewChangeManager.maxSeq(msg.getViewChanges());
 
-        viewChangeManager.newView(msg.getNewViewNumber());
-        seq = ViewChangeManager.maxSeq(msg.getViewChanges()) + 1;
+        pullNeededRequests(msg, maxSeq);
 
-        pullNeededRequests(msg);
+        if (this.nextToExecute > maxSeq) {
+            changeView(msg.getNewViewNumber());
+        } else {
+            //need this line to accept prepares and commits for pending view change since not changing view
+            viewChangeManager.setPendingViewChange(msg.getNewViewNumber());
+            viewChangeManager.setChangeViewAfterCommit(maxSeq);
+        }
+
+        seq = maxSeq + 1;
     }
 
-    private void pullNeededRequests(NewViewMessage msg) {
+    private void pullNeededRequests(NewViewMessage msg, int maxSeq) {
         var neededHashes = new HashSet<Integer>();
         var neededRequests = new LinkedList<Integer>();
-        for (int i = nextToExecute; i <= ViewChangeManager.maxSeq(msg.getViewChanges()); i++) {
+        for (int i = nextToExecute; i <= maxSeq; i++) {
             if (prePreparesLog.get(i) == null) {
                 // if don't have pre-prepare, need f (?) hashes from other replicas to prove reply is legit
                 neededRequests.add(i);
@@ -466,7 +496,7 @@ public class PBFTProtocol extends GenericProtocol {
         return requestsInNodes;
     }
 
-    //TODO can optimize this to pull requests not from one replica only
+    //TODO can optimize this to pull requests not from one replica only (minor optimization)
     private Map<Node, Set<Integer>> requestsToPullPerNode(Map<Node, Pair<Integer, Set<Integer>>> requestsInNodes, List<Integer> neededRequests) {
         var requestsToPullPerNode = new HashMap<Node, Set<Integer>>();
 
