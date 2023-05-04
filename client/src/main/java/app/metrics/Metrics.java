@@ -40,18 +40,19 @@ public class Metrics {
         }
     }
 
-    public static synchronized void writeMetric(String... param) {
+    public static synchronized void writeMetric(String metric, String... param) {
         if (fileOutputStream == null || param.length < 2 || param.length % 2 != 0)
             return;
 
         var now = clock.instant();
         var nanoNow = now.getEpochSecond() * 1_000_000_000 + ((long) now.getNano());
-        Map<String, String> metric = new HashMap<>();
-        metric.put("time", String.valueOf(nanoNow));
+        Map<String, String> metricParams = new HashMap<>();
+        metricParams.put("metric", metric);
+        metricParams.put("time", String.valueOf(nanoNow));
         for (int i = 0; i < param.length; i += 2) {
-            metric.put(param[i], param[i + 1]);
+            metricParams.put(param[i], param[i + 1]);
         }
-        var json = gson.toJson(metric) + "\n";
+        var json = gson.toJson(metricParams) + "\n";
 
         try {
             fileOutputStream.write(json.getBytes());

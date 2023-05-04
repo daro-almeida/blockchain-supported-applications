@@ -148,7 +148,7 @@ public class OpenGoodsMarketClient {
 				pendingOps += ci.pending.size();
 			}
 
-			Metrics.writeMetric("pending_ops", Long.toString(pendingOps));
+			Metrics.writeMetric("pending_ops", "number", Long.toString(pendingOps));
 		}
 	}
 
@@ -463,13 +463,13 @@ public class OpenGoodsMarketClient {
 				long time = System.currentTimeMillis();
 				switch(osr.getStatus()) {
 				case REJECTED:
-					Metrics.writeMetric("operation_rejected", Long.toString(time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_rejected", "latency", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case FAILED:
-					Metrics.writeMetric("operation_failed", Long.toString(time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_failed", "latency", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case EXECUTED:
-					Metrics.writeMetric("operation_executed", Long.toString(time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_executed", "latency", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case CANCELLED:
 					//Should never happen
@@ -487,7 +487,7 @@ public class OpenGoodsMarketClient {
 		public void handleGenericClientReplyMessage(GenericClientReply gcr, Host from, short sourceProto, int channelID ) {
 			if(this.pending.containsKey(gcr.getrID())) {
 				long time = System.currentTimeMillis();
-				Metrics.writeMetric("operation_reply", Long.toString(time - pending.remove(gcr.getrID())));
+				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.remove(gcr.getrID())));
 			} //Else nothing to be done
 		}
 		
