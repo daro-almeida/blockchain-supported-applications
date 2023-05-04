@@ -26,13 +26,10 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import app.measurements.exporter.JSONArrayMeasurementsExporter;
-import app.measurements.exporter.JSONMeasurementsExporter;
-import app.measurements.exporter.MeasurementsExporter;
+import app.metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import app.measurements.Measurements;
 import app.messages.client.replies.GenericClientReply;
 import app.messages.client.replies.OperationStatusReply;
 import app.messages.client.requests.Cancel;
@@ -86,10 +83,9 @@ public class OpenGoodsMarketClient {
     public final static String EXCHANGE_KEY_STORE_PASSWORD = "ex_key_store_password";
     
     public final static String SERVER_LIST = "server_list";
-    
+
     public final static String STATS_PERIOD = "report_period";
     private long report_period; //miliseconds;
-	private final MeasurementsExporter export = new JSONArrayMeasurementsExporter(new FileOutputStream("measurements/measurements.json"));
 
     private long operation_refresh_timer;
     private long operation_timeout;
@@ -120,9 +116,7 @@ public class OpenGoodsMarketClient {
     private OPER[] ops = null;
     
     private Babel b;
-    
-    private Measurements m;
-    
+
     public static void main(String[] args) throws InvalidParameterException, IOException,
             HandlerRegistrationException, ProtocolAlreadyExistsException, GeneralSecurityException {
         Properties props =
@@ -133,7 +127,9 @@ public class OpenGoodsMarketClient {
             String address = getAddress(props.getProperty(INTERFACE));
             if (address == null) return;
             props.put(ADDRESS, address);       
-         }
+		}
+
+		Metrics.initMetrics(props);
         
         OpenGoodsMarketClient opm = new OpenGoodsMarketClient(props);
         opm.stats();
@@ -147,19 +143,12 @@ public class OpenGoodsMarketClient {
 		while(true) {
 			try { Thread.sleep(this.report_period); } catch (Exception e) {} //Every 20 seconds
 
-			wallclock += this.report_period;
-			long pendingOps = 0;
+			long pendingOps = 0L;
 			for(ClientInstance ci: clients) {
 				pendingOps += ci.pending.size();
 			}
-			try {
-				m.exportMeasurements(export);
-				export.write("pendingOps", "pendingOps", pendingOps);
-				export.close();
 
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
+			Metrics.writeMetric("pending_ops", Long.toString(pendingOps));
 		}
 	}
 
@@ -180,9 +169,7 @@ public class OpenGoodsMarketClient {
         this.report_period = Long.parseLong(props.getProperty(STATS_PERIOD));
         
         this.ops = new OPER[offer+want];
-        
-        this.m = new Measurements(new Properties());
-        
+
         int j = 0;
    	 
 	   	 for(; j < offer; j++) {
@@ -227,7 +214,7 @@ public class OpenGoodsMarketClient {
     	 this.clients = new ClientInstance[this.number_of_clients];
     	 for(short i = 1; i <= this.number_of_clients; i++) {
     		 this.initial_port += this.servers.length;
-    		 this.clients[i-1] = new ClientInstance(i, this.initial_port, password, nm, b, m);
+    		 this.clients[i-1] = new ClientInstance(i, this.initial_port, password, nm, b);
     	 }
     	
     	 this.exchangeClient.init(props);
@@ -395,12 +382,10 @@ public class OpenGoodsMarketClient {
     	private HashMap<UUID,Long> pending;
     	
     	private Random r;
-    	
-    	private Measurements m;
-    	
+
     	private EventLoopGroup nm;
     	
-		public ClientInstance(short client_id, short port, char[] password, EventLoopGroup nm, Babel b, Measurements m) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
+		public ClientInstance(short client_id, short port, char[] password, EventLoopGroup nm, Babel b) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
 			super(OpenGoodsMarketClient.PROTO_NAME + client_id, (short) (OpenGoodsMarketClient.PROTO_ID + client_id));
 			this.client_id = client_id;
 			this.client_name = "client" + this.client_id;
@@ -416,8 +401,6 @@ public class OpenGoodsMarketClient {
 			wallets.put(this.identity, 0F);
 			
 			this.r = new Random(System.currentTimeMillis());
-			
-			this.m = m;
 		}
 
     	public void startClient() {
@@ -480,13 +463,13 @@ public class OpenGoodsMarketClient {
 				long time = System.currentTimeMillis();
 				switch(osr.getStatus()) {
 				case REJECTED:
-					m.measure("OPERATION_REJECTED",  (int) (time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_rejected", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case FAILED:
-					m.measure("OPERATION_FAILED",  (int) (time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_failed", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case EXECUTED:
-					m.measure("OPERATION_EXECUTED", (int) (time - pending.remove(osr.getrID())));
+					Metrics.writeMetric("operation_executed", Long.toString(time - pending.remove(osr.getrID())));
 					break;
 				case CANCELLED:
 					//Should never happen
@@ -504,7 +487,7 @@ public class OpenGoodsMarketClient {
 		public void handleGenericClientReplyMessage(GenericClientReply gcr, Host from, short sourceProto, int channelID ) {
 			if(this.pending.containsKey(gcr.getrID())) {
 				long time = System.currentTimeMillis();
-				m.measure("OPERATION_REPLY", (int) (time - pending.get(gcr.getrID())));
+				Metrics.writeMetric("operation_reply", Long.toString(time - pending.remove(gcr.getrID())));
 			} //Else nothing to be done
 		}
 		
