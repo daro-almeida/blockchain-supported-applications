@@ -3,6 +3,7 @@ package blockchain;
 import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
+import blockchain.notifications.ExecutedOperation;
 import blockchain.requests.BlockReply;
 import blockchain.requests.BlockRequest;
 import blockchain.requests.ClientRequest;
@@ -223,9 +224,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		});
 		leaderSuspectTimers.clear();
 
-		// TODO might issue repeated ones here which is a problem, if so need to get
-		// extra info from view change on
-		// requests that will be handled in new view by consensus itself
+		// TODO might issue repeated ones here which is a problem (minor issue ignore for now)
 		pendingRequests.forEach((reqId, pendingRequest) -> {
 			pendingRequest.setTimestamp(System.currentTimeMillis());
 			handleClientRequest(pendingRequest.request(), BlockChainProtocol.PROTO_ID);
@@ -256,17 +255,9 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		// TODO check if any requests (in Block later) are repeated and invalid
-		// TODO se for invalid e foi feito pelo lider? then suspect
-		if (!blockChain.validateBlock(notif.getBlock())) {
-			logger.info("Received invalid block");
-			if (this.self.id() == this.view.getPrimary().id()) {
-				// send suspect message
-				sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+		// TODO check if any requests (in Block later) are repeated and valid
+		//sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 
-			}
-			return;
-		}
 
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
@@ -282,9 +273,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		logger.info("Committed: " + request.getRequestId());
-		pendingRequests.remove(request.getRequestId());
 
-		if (!this.view.getPrimary().equals(this.self)) {
+		//for request in block
+			pendingRequests.remove(request.getRequestId());
 			var requestSuspectTimer = leaderSuspectTimers.remove(request.getRequestId());
 			if (requestSuspectTimer != null) {
 				// all requests for this timer have been committed, so cancel it
@@ -292,10 +283,11 @@ public class BlockChainProtocol extends GenericProtocol {
 					cancelTimer(requestSuspectTimer);
 				}
 			}
+			triggerNotification(new ExecutedOperation(request));
 
-			cancelTimer(leaderIdleTimer);
-			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
-		}
+
+		cancelTimer(leaderIdleTimer);
+		leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
 	}
 
 	/*

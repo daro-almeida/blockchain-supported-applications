@@ -7,8 +7,7 @@ import java.util.List;
 
 public class NoOpBlock extends Block {
 
-    //TODO not sure
-    public NoOpBlock(byte[] previousHash, int consensusSeqN, int replicaId) {
-        super(previousHash, -1, consensusSeqN, Collections.emptyList(), replicaId);
+    public NoOpBlock(int replicaId) {
+        super(null, Collections.emptyList(), replicaId);
     }
 }

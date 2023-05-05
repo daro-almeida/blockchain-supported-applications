@@ -12,14 +12,14 @@ import java.nio.ByteBuffer;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.function.Consumer;
 
-public class Block {
+public class Block implements Iterable<ClientRequest>{
 
     private final byte[] hash;
     private final byte[] previousHash;
-    private final int seqN;
-    private final int consensusSeqN;
     private final int replicaId; // identity of the replica that generated the block and its signature.
     //checkar ops repetidas
     //checkar se assinatura das ops sao validas
@@ -38,21 +38,15 @@ public class Block {
     }
     public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
         this.operations = operations;
         this.replicaId = replicaId;
 
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    private Block(byte[] hash, byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations,
-            int replicaId,
-            byte[] signature) {
+    private Block(byte[] hash, byte[] previousHash, List<ClientRequest> operations, int replicaId, byte[] signature) {
         this.hash = hash;
         this.previousHash = previousHash;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
         this.operations = operations;
         this.replicaId = replicaId;
         this.signature = signature;
@@ -62,24 +56,8 @@ public class Block {
         return hash;
     }
 
-    public byte[] getPreviousHash() {
-        return previousHash;
-    }
-
     public byte[] getSignature() {
         return signature;
-    }
-
-    public int getSeqN() {
-        return seqN;
-    }
-
-    public int getConsensusSeqN() {
-        return consensusSeqN;
-    }
-
-    public List<ClientRequest> getOperations() {
-        return operations;
     }
 
     public int getReplicaId() {
@@ -103,12 +81,10 @@ public class Block {
     }
 
     private byte[] blockContentsWithoutHash() {
-        ByteBuffer buf = ByteBuffer.allocate((previousHash == null ? 0 : previousHash.length) + 3 * Integer.BYTES);
+        ByteBuffer buf = ByteBuffer.allocate((previousHash == null ? 0 : previousHash.length) + Integer.BYTES);
 
         if (previousHash != null)
             buf.put(previousHash);
-        buf.putInt(seqN);
-        buf.putInt(consensusSeqN);
         buf.putInt(replicaId);
         for (ClientRequest op : operations) {
             byte[] opBytes = op.toBytes();
@@ -142,8 +118,6 @@ public class Block {
                 throw new RuntimeException("Block not signed");
             Utils.byteArraySerializer.serialize(block.hash, out);
             Utils.byteArraySerializer.serialize(block.previousHash, out);
-            out.writeInt(block.seqN);
-            out.writeInt(block.consensusSeqN);
             out.writeInt(block.replicaId);
 
             out.writeInt(block.operations.size());
@@ -158,8 +132,6 @@ public class Block {
         public Block deserialize(ByteBuf in) throws IOException {
             byte[] hash = Utils.byteArraySerializer.deserialize(in);
             byte[] prevHash = Utils.byteArraySerializer.deserialize(in);
-            int seqN = in.readInt();
-            int consensusSeqN = in.readInt();
             int replicaId = in.readInt();
 
             int numOps = in.readInt();
@@ -169,8 +141,17 @@ public class Block {
             }
 
             byte[] signature = Utils.byteArraySerializer.deserialize(in);
-            return new Block(hash, prevHash, seqN, consensusSeqN, ops, replicaId, signature);
+            return new Block(hash, prevHash, ops, replicaId, signature);
         }
     };
 
+    @Override
+    public Iterator<ClientRequest> iterator() {
+        return operations.iterator();
+    }
+
+    @Override
+    public void forEach(Consumer<? super ClientRequest> action) {
+        operations.forEach(action);
+    }
 }

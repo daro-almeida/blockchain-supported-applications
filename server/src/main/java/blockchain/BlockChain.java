@@ -21,6 +21,7 @@ public class BlockChain {
     private final Set<UUID> operations = new HashSet<>();
 
     public BlockChain() {
+        //TODO insert genesis block
     }
 
     public Block getBlock(int n) {
