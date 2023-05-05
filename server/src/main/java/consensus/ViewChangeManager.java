@@ -20,6 +20,7 @@ public class ViewChangeManager {
 
     private Integer askedViewChange = null;
     private Integer pendingViewChange = null;
+    private Integer changeViewAfterCommit = null;
 
     public ViewChangeManager(Node self, View view, PrivateKey key) {
         this.self = self;
@@ -56,7 +57,7 @@ public class ViewChangeManager {
         viewChangesLog.computeIfAbsent(msg.getNewViewNumber(), k -> new HashSet<>()).add(msg);
         var viewChanges = viewChangesLog.get(msg.getNewViewNumber());
 
-        if (viewChanges.size() >= 2*f + 1) {
+        if (viewChanges.size() >= 2*f + 1 && (pendingViewChange == null || msg.getNewViewNumber() > pendingViewChange)) {
             pendingViewChange = msg.getNewViewNumber();
             if (view.leaderInView(msg.getNewViewNumber()).equals(self)) {
                 Set<PrePrepareMessage> prePrepares = ViewChangeManager.newPrePrepareMessages(msg.getNewViewNumber(), viewChanges, f);
@@ -68,10 +69,24 @@ public class ViewChangeManager {
         return null;
     }
 
-    public void newView(int newViewNumber) {
-        viewChangesLog.remove(newViewNumber);
+    public Integer newView() {
+        if (pendingViewChange == null)
+            return null;
+
+        int newViewNumber = pendingViewChange;
+        viewChangesLog.remove(pendingViewChange);
         askedViewChange = null;
         pendingViewChange = null;
+        changeViewAfterCommit = null;
+
+        return newViewNumber;
+    }
+
+    public void newView(int newViewNumber) {
+        viewChangesLog.remove(pendingViewChange);
+        askedViewChange = null;
+        pendingViewChange = null;
+        changeViewAfterCommit = null;
     }
 
     public boolean rejectMessage(int viewNumber) {
@@ -107,5 +122,17 @@ public class ViewChangeManager {
             prePrepares.add(newPrePrepare);
         }
         return prePrepares;
+    }
+
+    public void setPendingViewChange(int seq) {
+        pendingViewChange = seq;
+    }
+
+    public void setChangeViewAfterCommit(int seq) {
+        changeViewAfterCommit = seq;
+    }
+
+    public boolean shouldChangeView(int seq) {
+        return changeViewAfterCommit != null && changeViewAfterCommit == seq;
     }
 }

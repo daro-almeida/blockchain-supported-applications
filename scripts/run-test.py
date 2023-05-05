@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 import argparse
 import time
 
@@ -56,7 +55,7 @@ def run_clients(n: int):
         "-v", f"{cwd}/client/deploy/log4j2.xml:/usr/local/log4j2.xml",
         "-v", f"{cwd}/client/deploy/crypto/:/usr/local/crypto/",
         "-v", f"{cwd}/logs:/usr/local/logs/",
-        "-v", f"{cwd}/measurements:/usr/local/measurements/",
+        "-v", f"{cwd}/metrics:/usr/local/metrics/",
         "-w", "/usr/local/",
         "openjdk:17",
 

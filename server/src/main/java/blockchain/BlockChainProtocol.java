@@ -4,10 +4,7 @@ import blockchain.messages.ClientRequestUnhandledMessage;
 import blockchain.messages.RedirectClientRequestMessage;
 import blockchain.messages.StartClientRequestSuspectMessage;
 import blockchain.notifications.ExecutedOperation;
-import blockchain.requests.BlockReply;
-import blockchain.requests.BlockRequest;
-import blockchain.requests.ClientRequest;
-import blockchain.requests.PendingRequest;
+import blockchain.requests.*;
 import blockchain.timers.CheckUnhandledRequestsPeriodicTimer;
 import blockchain.timers.ForceBlockTimer;
 import blockchain.timers.LeaderIdleTimer;
@@ -24,6 +21,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
+import pt.unl.fct.di.novasys.babel.generic.ProtoRequest;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
 import utils.Node;
@@ -88,6 +86,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	public void init(Properties props) throws HandlerRegistrationException {
 		registerRequestHandler(ClientRequest.REQUEST_ID, this::handleClientRequest);
 		registerRequestHandler(BlockRequest.REQUEST_ID, this::handleBlockRequest);
+		registerRequestHandler(HashRequest.REQUEST_ID, this::handleHashRequest);
 
 		registerTimerHandler(CheckUnhandledRequestsPeriodicTimer.TIMER_ID,
 				this::handleCheckUnhandledRequestsPeriodicTimer);
@@ -198,6 +197,19 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	}
 
+	private void handleHashRequest(HashRequest req, short sourceProtoId) {
+		assert this.view != null;
+
+		var hashes = new HashMap<Integer, byte[]>();
+		req.getHashesWanted().forEach(n -> {
+			Block b = blockChain.getBlock(n);
+			//here it's hash of whole block not hash of rest of contents
+			hashes.put(n, Crypto.digest(b.blockContents()));
+		});
+		HashReply r = new HashReply(hashes, this.self.id());
+		sendReply(r, PBFTProtocol.PROTO_ID);
+	}
+
 	/*
 	 * ----------------------------------------------- -------------
 	 * ------------------------------------------
@@ -224,7 +236,6 @@ public class BlockChainProtocol extends GenericProtocol {
 		});
 		leaderSuspectTimers.clear();
 
-		// TODO might issue repeated ones here which is a problem (minor issue ignore for now)
 		pendingRequests.forEach((reqId, pendingRequest) -> {
 			pendingRequest.setTimestamp(System.currentTimeMillis());
 			handleClientRequest(pendingRequest.request(), BlockChainProtocol.PROTO_ID);
