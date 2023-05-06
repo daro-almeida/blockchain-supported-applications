@@ -6,7 +6,7 @@ import java.util.Set;
 
 public class HashRequest extends ProtoRequest {
 
-    public static final short REQUEST_ID = 203;
+    public static final short REQUEST_ID = 206;
 
     private final Set<Integer> hashesWanted;
     private final int requesterId;

@@ -270,6 +270,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		//sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 
 
+		
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
 		try {
@@ -433,7 +434,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
 		logger.warn("Forcing block");
 		// Criar bloco com as ops q tenho e mandar para o pbft
-		new BlockRequest(null, PROTO_ID)
+		var currentBlock  = blockChain.getBlock(START_INTERVAL)
+		var forceBlock = new BlockRequest(Collections.emptySet(), PROTO_ID);
 		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
 
 	}

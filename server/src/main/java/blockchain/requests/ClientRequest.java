@@ -17,7 +17,7 @@ import utils.Utils;
 
 public class ClientRequest extends ProtoRequest {
 
-	public static final short REQUEST_ID = 201;
+	public static final short REQUEST_ID = 203;
 
 	private final UUID requestId;
 	private final byte[] operation;

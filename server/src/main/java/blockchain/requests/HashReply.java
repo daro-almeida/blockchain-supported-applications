@@ -6,7 +6,7 @@ import java.util.Map;
 
 public class HashReply extends ProtoReply {
 
-    public static final short REPLY_ID = 202;
+    public static final short REPLY_ID = 205;
 
     private final Map<Integer, byte[]> hashes;
     private final int requesterId;

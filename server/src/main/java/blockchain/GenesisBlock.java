@@ -4,7 +4,7 @@ import java.util.Collections;
 
 public class GenesisBlock extends Block {
 
-    public GenesisBlock(int replicaId) {
+    public GenesisBlock() {
         super(null, Collections.emptyList(), -1);
     }
 }

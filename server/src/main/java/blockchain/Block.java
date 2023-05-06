@@ -16,13 +16,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class Block implements Iterable<ClientRequest>{
+public class Block implements Iterable<ClientRequest> {
 
     private final byte[] hash;
     private final byte[] previousHash;
-    private final int replicaId; // identity of the replica that generated the block and its signature.
-    //checkar ops repetidas
-    //checkar se assinatura das ops sao validas
+
+    private final int replicaId;// identity of the replica that generated the block and its signature.
+    private final int seqN, consensusSeqN;
+    // checkar ops repetidas
+    // checkar se assinatura das ops sao validas
     private final List<ClientRequest> operations;
 
     private byte[] signature;
@@ -36,20 +38,20 @@ public class Block implements Iterable<ClientRequest>{
 
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
+
     public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
         this.operations = operations;
         this.replicaId = replicaId;
-
+        this.seqN = seqN;
+        this.consensusSeqN = consensusSeqN;
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    private Block(byte[] hash, byte[] previousHash, List<ClientRequest> operations, int replicaId, byte[] signature) {
+    public Block(byte[] hash, List<ClientRequest> operations, int replicaId) {
         this.hash = hash;
-        this.previousHash = previousHash;
         this.operations = operations;
         this.replicaId = replicaId;
-        this.signature = signature;
     }
 
     public byte[] getHash() {
@@ -62,6 +64,26 @@ public class Block implements Iterable<ClientRequest>{
 
     public int getReplicaId() {
         return replicaId;
+    }
+
+    public List<ClientRequest> getOperations() {
+        return operations;
+    }
+
+    public byte[] getPreviousHash() {
+        return previousHash;
+    }
+
+    public int getSeqN() {
+        return seqN;
+    }
+
+    public int getConsensusSeqN() {
+        return consensusSeqN;
+    }
+
+    public static ISerializer<Block> getSerializer() {
+        return serializer;
     }
 
     public void addOp(ClientRequest req) {

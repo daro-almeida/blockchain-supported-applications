@@ -22,6 +22,7 @@ public class BlockChain {
 
     public BlockChain() {
         //TODO insert genesis block
+        blocks.put(0, new GenesisBlock());
     }
 
     public Block getBlock(int n) {
@@ -32,6 +33,7 @@ public class BlockChain {
     public void addBlock(int n, Block block) {
         // para todas as ops do bloco colocar no set de ops
         block.getOperations().forEach(req -> operations.add(req.getRequestId()));
+        //TODO add block with prevHash
         blocks.put(n, block);
     }
 
