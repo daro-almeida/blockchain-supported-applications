@@ -154,7 +154,12 @@ public class BlockChainProtocol extends GenericProtocol {
 		assert this.view != null;
 
 		byte[] request = req.toBytes();
-		// verfificar se o request n e repetido
+
+		if(!blockChain.containsRequest(req.getRequestId())) {
+			logger.warn("Received repeated request from node{}: {} ", req.getRequestId());
+			return;
+		}
+
 		if (this.view.getPrimary().equals(this.self)) {
 			// FIXME this is simulating signing block for now
 			byte[] signature = SignaturesHelper.generateSignature(request, this.key);
@@ -203,7 +208,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		var hashes = new HashMap<Integer, byte[]>();
 		req.getHashesWanted().forEach(n -> {
 			Block b = blockChain.getBlock(n);
-			//here it's hash of whole block not hash of rest of contents
+			// here it's hash of whole block not hash of rest of contents
 			hashes.put(n, Crypto.digest(b.blockContents()));
 		});
 		HashReply r = new HashReply(hashes, this.self.id());
@@ -256,7 +261,6 @@ public class BlockChainProtocol extends GenericProtocol {
 	// verficar assinatura do block na notif
 	// ver se no-op e repetido
 	private void handleCommittedNotification(CommittedNotification notif, short protoID) {
-		// TODO substitute for checking for NoOpBlock later
 		if (Arrays.equals(notif.getBlock(), new byte[0])) {
 			logger.info("Received no-op");
 			if (!this.view.getPrimary().equals(this.self)) {
@@ -266,11 +270,30 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		// TODO check if any requests (in Block later) are repeated and valid
-		//sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+
+		//TODO check if block is repeated (unsure)
+		/* if (blockChain.containsBlock(notif.getBlock())) {
+			logger.info("Received repeated block");
+			return;
+		} */
+
+		// checking if block signature is valid
+		if (!SignaturesHelper.checkSignature(notif.getBlock(), notif.getSignature(),
+				this.view.getNode(notif.getId()).publicKey())) {
+			logger.info("Invalid signature.");
+			return;
+		}
+
+		if (!blockChain.validateBlock(notif.getBlock())) {
+			logger.info("Invalid block!");
+			return;
+		}
 
 
-		
+
+
+		// sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
 		try {
@@ -286,17 +309,16 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		logger.info("Committed: " + request.getRequestId());
 
-		//for request in block
-			pendingRequests.remove(request.getRequestId());
-			var requestSuspectTimer = leaderSuspectTimers.remove(request.getRequestId());
-			if (requestSuspectTimer != null) {
-				// all requests for this timer have been committed, so cancel it
-				if (leaderSuspectTimers.values().stream().noneMatch(timer -> timer.equals(requestSuspectTimer))) {
-					cancelTimer(requestSuspectTimer);
-				}
+		// for request in block
+		pendingRequests.remove(request.getRequestId());
+		var requestSuspectTimer = leaderSuspectTimers.remove(request.getRequestId());
+		if (requestSuspectTimer != null) {
+			// all requests for this timer have been committed, so cancel it
+			if (leaderSuspectTimers.values().stream().noneMatch(timer -> timer.equals(requestSuspectTimer))) {
+				cancelTimer(requestSuspectTimer);
 			}
-			triggerNotification(new ExecutedOperation(request));
-
+		}
+		triggerNotification(new ExecutedOperation(request));
 
 		cancelTimer(leaderIdleTimer);
 		leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
@@ -319,8 +341,8 @@ public class BlockChainProtocol extends GenericProtocol {
 			int channelId) {
 		if (!validateRedirectClientRequestMessage(msg))
 			return;
-		// TODO check if requests are repeated
-		if(blockChain.containsRequest(msg.getRequest())){
+		// checking if request is repeated
+		if (blockChain.containsRequest(msg.getRequest())) {
 			logger.warn("Received invalid request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
 			return;
 		}
@@ -343,7 +365,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		logger.warn("Received unhandled requests from node{}: {} ", msg.getNodeId(), msg.getRequests());
 
 		Set<UUID> unhandledRequestsHere = msg.getRequests().stream()
-				.filter(request -> true) // FIXME check if request is already in the blockchain
+				.filter(req -> blockChain.containsRequest(req))
 				.map(ClientRequest::getRequestId)
 				.collect(Collectors.toSet());
 
@@ -369,7 +391,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		Set<UUID> unhandledRequestsHere = msg.getRequestIds().stream()
-				.filter(req -> blockChain.containsRequest(req)) // FIXME check if request is already in the blockchain
+				.filter(req -> blockChain.containsRequest(req)) 
 				.collect(Collectors.toSet());
 		if (unhandledRequestsHere.isEmpty())
 			return;
@@ -433,8 +455,12 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
 		logger.warn("Forcing block");
-		// Criar bloco com as ops q tenho e mandar para o pbft
-		var currentBlock  = blockChain.getBlock(START_INTERVAL)
+		// TODO Criar bloco com as ops q tenho pending e mandar para o pbft
+
+		var requests = pendingRequests.values().stream().map(r -> {return r.request;}).collect(Collectors.toList());
+
+		
+
 		var forceBlock = new BlockRequest(Collections.emptySet(), PROTO_ID);
 		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
 

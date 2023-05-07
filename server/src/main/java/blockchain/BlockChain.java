@@ -21,7 +21,7 @@ public class BlockChain {
     private final Set<UUID> operations = new HashSet<>();
 
     public BlockChain() {
-        //TODO insert genesis block
+        // TODO insert genesis block
         blocks.put(0, new GenesisBlock());
     }
 
@@ -33,7 +33,11 @@ public class BlockChain {
     public void addBlock(int n, Block block) {
         // para todas as ops do bloco colocar no set de ops
         block.getOperations().forEach(req -> operations.add(req.getRequestId()));
-        //TODO add block with prevHash
+        // get last block from consensusBlocks
+        Block last = consensusBlocks.get(block.getConsensusSeqN() - 1);
+        // set block prevHash with last hash
+        //block.setPreviousHash(last.getHash());
+        
         blocks.put(n, block);
     }
 
@@ -65,8 +69,14 @@ public class BlockChain {
     public boolean containsRequest(ClientRequest req) {
         return operations.contains(req.getRequestId());
     }
+
     public boolean containsRequest(UUID req) {
         return operations.contains(req);
+    }
+
+    public boolean containsBlock(Block block) {
+        return blocks.containsKey(block.getSeqN()) ||
+                consensusBlocks.containsKey(block.getConsensusSeqN());
     }
 
 }

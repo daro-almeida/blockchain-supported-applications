@@ -48,10 +48,20 @@ public class Block implements Iterable<ClientRequest> {
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    public Block(byte[] hash, List<ClientRequest> operations, int replicaId) {
+
+    public Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId2, byte[] signature) {
         this.hash = hash;
-        this.operations = operations;
-        this.replicaId = replicaId;
+        this.previousHash = prevHash;
+        this.operations = ops;
+        this.replicaId = replicaId2;
+        this.signature = signature;
+        this.seqN = -1;
+        this.consensusSeqN = -1;
+
+    }
+
+    public boolean equals(Block other) {
+        return (hash == null && other.hash == null) || hash.equals(other.hash);
     }
 
     public byte[] getHash() {
@@ -163,6 +173,7 @@ public class Block implements Iterable<ClientRequest> {
             }
 
             byte[] signature = Utils.byteArraySerializer.deserialize(in);
+            
             return new Block(hash, prevHash, ops, replicaId, signature);
         }
     };

@@ -8,6 +8,7 @@ import java.util.List;
 public class NoOpBlock extends Block {
 
     public NoOpBlock(int replicaId) {
-        super(null, Collections.emptyList(), replicaId);
+        super(null,-1, -1, Collections.emptyList(), replicaId);
+
     }
 }
