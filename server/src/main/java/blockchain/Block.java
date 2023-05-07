@@ -2,6 +2,7 @@ package blockchain;
 
 import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
 import utils.SignaturesHelper;
@@ -22,41 +23,25 @@ public class Block implements Iterable<ClientRequest> {
     private final byte[] previousHash;
 
     private final int replicaId;// identity of the replica that generated the block and its signature.
-    private final int seqN, consensusSeqN;
     // checkar ops repetidas
     // checkar se assinatura das ops sao validas
     private final List<ClientRequest> operations;
 
     private byte[] signature;
 
-    public Block(byte[] previousHash, int seqN, int consensusSeqN, int replicaId) {
-        this.previousHash = previousHash;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
-        this.operations = new ArrayList<>();
-        this.replicaId = replicaId;
-
-        this.hash = Crypto.digest(blockContentsWithoutHash());
-    }
-
-    public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
+    public Block(byte[] previousHash, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
         this.operations = operations;
         this.replicaId = replicaId;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-
-    public Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId2, byte[] signature) {
+    private Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId, byte[] signature) {
         this.hash = hash;
         this.previousHash = prevHash;
         this.operations = ops;
-        this.replicaId = replicaId2;
+        this.replicaId = replicaId;
         this.signature = signature;
-        this.seqN = -1;
-        this.consensusSeqN = -1;
 
     }
 
@@ -84,20 +69,8 @@ public class Block implements Iterable<ClientRequest> {
         return previousHash;
     }
 
-    public int getSeqN() {
-        return seqN;
-    }
-
-    public int getConsensusSeqN() {
-        return consensusSeqN;
-    }
-
     public static ISerializer<Block> getSerializer() {
         return serializer;
-    }
-
-    public void addOp(ClientRequest req) {
-        operations.add(req);
     }
 
     /*
@@ -112,7 +85,7 @@ public class Block implements Iterable<ClientRequest> {
         return buf.array();
     }
 
-    private byte[] blockContentsWithoutHash() {
+    public byte[] blockContentsWithoutHash() {
         ByteBuffer buf = ByteBuffer.allocate((previousHash == null ? 0 : previousHash.length) + Integer.BYTES);
 
         if (previousHash != null)
@@ -124,6 +97,16 @@ public class Block implements Iterable<ClientRequest> {
             buf.put(opBytes);
         }
         return buf.array();
+    }
+
+    public static Block fromBytes(byte[] block) {
+        try {
+            return serializer.deserialize(Unpooled.wrappedBuffer(block));
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        return null;
     }
 
     /*
@@ -173,7 +156,7 @@ public class Block implements Iterable<ClientRequest> {
             }
 
             byte[] signature = Utils.byteArraySerializer.deserialize(in);
-            
+
             return new Block(hash, prevHash, ops, replicaId, signature);
         }
     };

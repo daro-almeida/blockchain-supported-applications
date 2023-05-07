@@ -52,18 +52,21 @@ public class BlockChainProtocol extends GenericProtocol {
 	private final long liveTimeout;
 	private final long noOpTimeout;
 	private final long forceBlockTimeout;
+	private final long maxOps;
 
 	private long leaderIdleTimer = -1;
 	private long noOpTimer = -1;
 	private long forceBlockTimer = -1;
 	private final Map<UUID, Long> leaderSuspectTimers = new HashMap<>();
 
+	private List<ClientRequest> blockOps = new LinkedList<>();
+
 	// <requestId, (request, timestamp)>
 	private final Map<UUID, PendingRequest> pendingRequests = new HashMap<>();
 	// <requestId, set<nodeId>>
 	private final Map<UUID, Set<Integer>> nodesSuspectedPerRequest = new HashMap<>();
 
-	private final BlockChain blockChain = new BlockChain();
+	private final BlockChain blockChain;
 
 	private Node self;
 	private View view;
@@ -79,7 +82,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.requestTimeout = Long.parseLong(props.getProperty("request_timeout", "3000"));
 		this.liveTimeout = Long.parseLong(props.getProperty("leader_live_timeout", "5000"));
 		this.noOpTimeout = Long.parseLong(props.getProperty("noop_timeout", "2500"));
-		this.forceBlockTimeout = Long.parseLong(props.getProperty("force_block_timeout", "5000"));
+		this.forceBlockTimeout = Long.parseLong(props.getProperty("force_block_timeout", "1000"));
+		this.maxOps = Long.parseLong(props.getProperty("max_ops_per_block", "100"));
+		this.blockChain = new BlockChain(maxOps);
 	}
 
 	@Override
@@ -155,7 +160,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		byte[] request = req.toBytes();
 
-		if(!blockChain.containsRequest(req.getRequestId())) {
+		if (!blockChain.containsRequest(req.getRequestId())) {
 			logger.warn("Received repeated request from node{}: {} ", req.getRequestId());
 			return;
 		}
@@ -167,6 +172,8 @@ public class BlockChainProtocol extends GenericProtocol {
 			// implement many requests per block later
 			var propose = new ProposeRequest(request, signature);
 			logger.info("Proposing: " + req.getRequestId());
+			// create block and fill with ops. when block is full, send to pbft
+			// (forceblocktimer)
 			sendRequest(propose, PBFTProtocol.PROTO_ID);
 
 			cancelTimer(noOpTimer);
@@ -269,14 +276,6 @@ public class BlockChainProtocol extends GenericProtocol {
 			}
 			return;
 		}
-
-
-		//TODO check if block is repeated (unsure)
-		/* if (blockChain.containsBlock(notif.getBlock())) {
-			logger.info("Received repeated block");
-			return;
-		} */
-
 		// checking if block signature is valid
 		if (!SignaturesHelper.checkSignature(notif.getBlock(), notif.getSignature(),
 				this.view.getNode(notif.getId()).publicKey())) {
@@ -284,15 +283,26 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		if (!blockChain.validateBlock(notif.getBlock())) {
+		byte[] block = notif.getBlock();
+		Block b = Block.fromBytes(block);
+		if (!blockChain.validateBlock(block)) {
 			logger.info("Invalid block!");
+
+			if (b.getReplicaId() == view.getPrimary().id()) {
+				logger.info("Suspecting leader");
+				sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
+			} else {
+				// send all pending ops
+				logger.info("Sending all pending ops");
+				pendingRequests.entrySet().stream()
+						.filter(pr -> blockChain.validOperation(pr.getValue().request))
+						.map(req -> req.getValue().request)
+						// TODO this ok?
+						.forEach(req -> sendRequest(req, PBFTProtocol.PROTO_ID));
+
+			}
 			return;
 		}
-
-
-
-
-		// sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 
 		// don't need to do this mess after switching to block
 		ClientRequest request = null;
@@ -307,6 +317,10 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
+		// TODO check if this is ok. where to use blockOps (????)
+		sendRequest(new ProposeRequest(block, b.getSignature()), PBFTProtocol.PROTO_ID);
+		// TODO empty ops
+		blockOps = new LinkedList<>();
 		logger.info("Committed: " + request.getRequestId());
 
 		// for request in block
@@ -343,7 +357,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		// checking if request is repeated
 		if (blockChain.containsRequest(msg.getRequest())) {
-			logger.warn("Received invalid request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
+			logger.warn("Received repeated request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
 			return;
 		}
 		var requestBytes = msg.getRequest().toBytes();
@@ -391,7 +405,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		Set<UUID> unhandledRequestsHere = msg.getRequestIds().stream()
-				.filter(req -> blockChain.containsRequest(req)) 
+				.filter(req -> blockChain.containsRequest(req))
 				.collect(Collectors.toSet());
 		if (unhandledRequestsHere.isEmpty())
 			return;
@@ -455,17 +469,41 @@ public class BlockChainProtocol extends GenericProtocol {
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
 		logger.warn("Forcing block");
-		// TODO Criar bloco com as ops q tenho pending e mandar para o pbft
-
-		var requests = pendingRequests.values().stream().map(r -> {return r.request;}).collect(Collectors.toList());
-
-		
-
-		var forceBlock = new BlockRequest(Collections.emptySet(), PROTO_ID);
-		sendRequest(forceBlock, PBFTProtocol.PROTO_ID);
+		// TODO Criar bloco com as ops q tenho pending e mandar para o pbft (done, ig?)
+		if (this.self.id() == this.view.getPrimary().id()) {
+			var block = blockChain.newBlock(blockOps, self.id());
+			var blockBytes = block.blockContents();
+			if (!blockChain.validateBlock(blockBytes)) {
+				logger.info("invalid block!");
+				return;
+			}
+			var signature = SignaturesHelper.generateSignature(blockBytes, this.key);
+			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
+			// TODO check if this is ok. clear ops
+			blockOps = new LinkedList<>();
+		}
+		// TODO else???
 
 	}
 
+	// TODO
+	private void handleMaxOpsReached() {
+		if (this.self.id() == this.view.getPrimary().id()) {
+			logger.warn("Max ops reached, forcing block");
+			// TODO Criar bloco com as ops q tenho pending e mandar para o pbft (done, ig?)
+			var block = blockChain.newBlock(blockOps, self.id());
+			var blockBytes = block.blockContents();
+			if (!blockChain.validateBlock(blockBytes)) {
+				logger.info("invalid block!");
+				return;
+			}
+			var signature = SignaturesHelper.generateSignature(blockBytes, this.key);
+			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
+			// TODO check if this is ok. clear ops
+			blockOps = new LinkedList<>();
+		}
+		// TODO else???
+	}
 	/*
 	 * ----------------------------------------------- -------------
 	 * ------------------------------------------

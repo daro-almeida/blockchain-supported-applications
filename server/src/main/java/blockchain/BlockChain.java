@@ -3,6 +3,7 @@ package blockchain;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -12,6 +13,8 @@ import io.netty.buffer.Unpooled;
 
 public class BlockChain {
 
+    private final long maxOps;
+
     // SEQ_N -> Block
     private final Map<Integer, Block> blocks = new HashMap<>();
     // consensusSeqN -> Block
@@ -20,25 +23,29 @@ public class BlockChain {
     // blockachain ops Set<UUID>
     private final Set<UUID> operations = new HashSet<>();
 
-    public BlockChain() {
+    public BlockChain(long maxOps) {
+        this.maxOps = maxOps;
         // TODO insert genesis block
         blocks.put(0, new GenesisBlock());
+        consensusBlocks.put(0, new GenesisBlock());
     }
 
     public Block getBlock(int n) {
         return blocks.get(n);
     }
 
-    // nr do consensus
+    public Block newBlock(List<ClientRequest> ops, int replicaId) {
+        //get last block contents with new ops
+        return new Block(blocks.get(blocks.size() - 1).getHash(), ops, replicaId);
+    }
+
+    // seqn do consensus
     public void addBlock(int n, Block block) {
         // para todas as ops do bloco colocar no set de ops
         block.getOperations().forEach(req -> operations.add(req.getRequestId()));
-        // get last block from consensusBlocks
-        Block last = consensusBlocks.get(block.getConsensusSeqN() - 1);
-        // set block prevHash with last hash
-        //block.setPreviousHash(last.getHash());
-        
-        blocks.put(n, block);
+
+        consensusBlocks.put(n, block);
+        blocks.put(blocks.size(), block);
     }
 
     // check if block is valid
@@ -47,11 +54,24 @@ public class BlockChain {
         Block b;
         try {
             b = Block.serializer.deserialize(Unpooled.wrappedBuffer(block));
-            return b.getPreviousHash().equals(blocks.get(b.getSeqN() - 1).getHash());
+            // rehash and check if hash is equal
+            byte[] rehash = b.blockContentsWithoutHash();
+            boolean validPrevHash = b.getPreviousHash().equals(blocks.get(blocks.size()-1).getHash());
+            int numOps = b.getOperations().size();
+            //TODO fkd up
+            boolean validOps = b.getOperations().stream().map(r->r.getRequestId()).allMatch(id -> !operations.contains(id));
+            if (!validPrevHash || !rehash.equals(b.getHash()) || (numOps > 1 && numOps <= maxOps) || validOps)
+                return false;
+
+            return true;
         } catch (IOException e) {
             e.printStackTrace();
         }
         return false;
+    }
+
+    public boolean validOperation(ClientRequest req){
+        return req.checkSignature() && operations.contains(req.getRequestId());        
     }
 
     // check if blocks are valid
@@ -74,9 +94,5 @@ public class BlockChain {
         return operations.contains(req);
     }
 
-    public boolean containsBlock(Block block) {
-        return blocks.containsKey(block.getSeqN()) ||
-                consensusBlocks.containsKey(block.getConsensusSeqN());
-    }
 
 }
