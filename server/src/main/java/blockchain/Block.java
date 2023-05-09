@@ -21,12 +21,8 @@ public class Block implements Iterable<ClientRequest> {
 
     private final byte[] hash;
     private final byte[] previousHash;
-
     private final int replicaId;// identity of the replica that generated the block and its signature.
-    // checkar ops repetidas
-    // checkar se assinatura das ops sao validas
     private final List<ClientRequest> operations;
-
     private byte[] signature;
 
     public Block(byte[] previousHash, List<ClientRequest> operations, int replicaId) {
@@ -43,10 +39,6 @@ public class Block implements Iterable<ClientRequest> {
         this.replicaId = replicaId;
         this.signature = signature;
 
-    }
-
-    public boolean equals(Block other) {
-        return (hash == null && other.hash == null) || hash.equals(other.hash);
     }
 
     public byte[] getHash() {
@@ -69,22 +61,6 @@ public class Block implements Iterable<ClientRequest> {
         return previousHash;
     }
 
-    public static ISerializer<Block> getSerializer() {
-        return serializer;
-    }
-
-    /*
-     * Includes everything but signature.
-     */
-    public byte[] blockContents() {
-        ByteBuffer buf = ByteBuffer.allocate(hash.length);
-        buf.put(hash);
-        var rest = blockContentsWithoutHash();
-        buf = ByteBuffer.allocate(rest.length);
-        buf.put(rest);
-        return buf.array();
-    }
-
     public byte[] blockContentsWithoutHash() {
         ByteBuffer buf = ByteBuffer.allocate((previousHash == null ? 0 : previousHash.length) + Integer.BYTES);
 
@@ -99,14 +75,25 @@ public class Block implements Iterable<ClientRequest> {
         return buf.array();
     }
 
-    public static Block fromBytes(byte[] block) {
+    /*
+     * Includes everything but signature.
+     */
+    public byte[] serialized() {
+        var bytebuf = Unpooled.buffer();
+        try {
+            serializer.serialize(this, bytebuf);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return bytebuf.array();
+    }
+
+    public static Block deserialize(byte[] block) {
         try {
             return serializer.deserialize(Unpooled.wrappedBuffer(block));
         } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
     /*
@@ -114,7 +101,7 @@ public class Block implements Iterable<ClientRequest> {
      * should be that of the replica ID.
      */
     public void sign(PrivateKey key) {
-        this.signature = SignaturesHelper.generateSignature(blockContents(), key);
+        this.signature = SignaturesHelper.generateSignature(serialized(), key);
     }
 
     /*
@@ -122,7 +109,11 @@ public class Block implements Iterable<ClientRequest> {
      * should be that of the replica ID.
      */
     public boolean checkSignature(PublicKey publicKey) {
-        return SignaturesHelper.checkSignature(blockContents(), signature, publicKey);
+        return SignaturesHelper.checkSignature(serialized(), signature, publicKey);
+    }
+
+    public static ISerializer<Block> getSerializer() {
+        return serializer;
     }
 
     public static ISerializer<Block> serializer = new ISerializer<>() {

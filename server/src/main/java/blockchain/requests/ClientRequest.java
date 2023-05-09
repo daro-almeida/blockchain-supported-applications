@@ -32,7 +32,6 @@ public class ClientRequest extends ProtoRequest {
 		this.publicKey = publicKey;
 	}
 
-	//TODO temporary constructor
 	public ClientRequest(byte[] operation, PublicKey publicKey, PrivateKey privateKey) {
 		super(ClientRequest.REQUEST_ID);
 
