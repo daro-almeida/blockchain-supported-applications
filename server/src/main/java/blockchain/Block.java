@@ -2,6 +2,7 @@ package blockchain;
 
 import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
 import utils.SignaturesHelper;
@@ -20,38 +21,24 @@ public class Block implements Iterable<ClientRequest> {
 
     private final byte[] hash;
     private final byte[] previousHash;
-
     private final int replicaId;// identity of the replica that generated the block and its signature.
-    private final int seqN, consensusSeqN;
-    // checkar ops repetidas
-    // checkar se assinatura das ops sao validas
     private final List<ClientRequest> operations;
-
     private byte[] signature;
 
-    public Block(byte[] previousHash, int seqN, int consensusSeqN, int replicaId) {
-        this.previousHash = previousHash;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
-        this.operations = new ArrayList<>();
-        this.replicaId = replicaId;
-
-        this.hash = Crypto.digest(blockContentsWithoutHash());
-    }
-
-    public Block(byte[] previousHash, int seqN, int consensusSeqN, List<ClientRequest> operations, int replicaId) {
+    public Block(byte[] previousHash, List<ClientRequest> operations, int replicaId) {
         this.previousHash = previousHash;
         this.operations = operations;
         this.replicaId = replicaId;
-        this.seqN = seqN;
-        this.consensusSeqN = consensusSeqN;
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    public Block(byte[] hash, List<ClientRequest> operations, int replicaId) {
+    private Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId, byte[] signature) {
         this.hash = hash;
-        this.operations = operations;
+        this.previousHash = prevHash;
+        this.operations = ops;
         this.replicaId = replicaId;
+        this.signature = signature;
+
     }
 
     public byte[] getHash() {
@@ -74,35 +61,7 @@ public class Block implements Iterable<ClientRequest> {
         return previousHash;
     }
 
-    public int getSeqN() {
-        return seqN;
-    }
-
-    public int getConsensusSeqN() {
-        return consensusSeqN;
-    }
-
-    public static ISerializer<Block> getSerializer() {
-        return serializer;
-    }
-
-    public void addOp(ClientRequest req) {
-        operations.add(req);
-    }
-
-    /*
-     * Includes everything but signature.
-     */
-    public byte[] blockContents() {
-        ByteBuffer buf = ByteBuffer.allocate(hash.length);
-        buf.put(hash);
-        var rest = blockContentsWithoutHash();
-        buf = ByteBuffer.allocate(rest.length);
-        buf.put(rest);
-        return buf.array();
-    }
-
-    private byte[] blockContentsWithoutHash() {
+    public byte[] blockContentsWithoutHash() {
         ByteBuffer buf = ByteBuffer.allocate((previousHash == null ? 0 : previousHash.length) + Integer.BYTES);
 
         if (previousHash != null)
@@ -117,11 +76,32 @@ public class Block implements Iterable<ClientRequest> {
     }
 
     /*
+     * Includes everything but signature.
+     */
+    public byte[] serialized() {
+        var bytebuf = Unpooled.buffer();
+        try {
+            serializer.serialize(this, bytebuf);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return bytebuf.array();
+    }
+
+    public static Block deserialize(byte[] block) {
+        try {
+            return serializer.deserialize(Unpooled.wrappedBuffer(block));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /*
      * Generates a signature for the block using the provided key. Owner of key
      * should be that of the replica ID.
      */
     public void sign(PrivateKey key) {
-        this.signature = SignaturesHelper.generateSignature(blockContents(), key);
+        this.signature = SignaturesHelper.generateSignature(serialized(), key);
     }
 
     /*
@@ -129,7 +109,11 @@ public class Block implements Iterable<ClientRequest> {
      * should be that of the replica ID.
      */
     public boolean checkSignature(PublicKey publicKey) {
-        return SignaturesHelper.checkSignature(blockContents(), signature, publicKey);
+        return SignaturesHelper.checkSignature(serialized(), signature, publicKey);
+    }
+
+    public static ISerializer<Block> getSerializer() {
+        return serializer;
     }
 
     public static ISerializer<Block> serializer = new ISerializer<>() {
@@ -163,6 +147,7 @@ public class Block implements Iterable<ClientRequest> {
             }
 
             byte[] signature = Utils.byteArraySerializer.deserialize(in);
+
             return new Block(hash, prevHash, ops, replicaId, signature);
         }
     };
