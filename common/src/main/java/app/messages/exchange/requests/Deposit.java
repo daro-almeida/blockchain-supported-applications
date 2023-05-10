@@ -1,6 +1,8 @@
 package app.messages.exchange.requests;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 
@@ -36,6 +38,16 @@ public class Deposit extends SignedProtoMessage{
 
 	public byte[] getSignature() {
 		return signature;
+	}
+
+	public byte[] getOpBytes() {
+		ByteBuf buf = Unpooled.buffer();
+		try {
+			serializer.serialize(this, buf);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+		return ByteBufUtil.getBytes(buf);
 	}
 
 	
