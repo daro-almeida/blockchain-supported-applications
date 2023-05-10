@@ -27,7 +27,7 @@ public class BlockChain {
     }
 
     public Block newBlock(List<ClientRequest> ops, int replicaId) {
-        //get last block contents with new ops
+        // get last block contents with new ops
         return new Block(blocks.get(blocks.size() - 1).getHash(), ops, replicaId);
     }
 
@@ -44,15 +44,45 @@ public class BlockChain {
     }
 
     public boolean validateBlock(Block block) {
+        /*
+         * // rehash and check if hash is equal
+         * byte[] rehash = Crypto.digest(block.blockContentsWithoutHash());
+         * boolean validPrevHash = Arrays.equals(block.getPreviousHash(),
+         * blocks.get(blocks.size() - 1).getHash());
+         * int numOps = block.getOperations().size();
+         * boolean validOps =
+         * block.getOperations().stream().map(ClientRequest::getRequestId).noneMatch(
+         * operations::contains);
+         * //Check ops signatures
+         * //TODO missing: check op signatures and check if there are repeated ops
+         * inside block; optimize
+         * boolean signedOps =
+         * block.getOperations().stream().filter(ClientRequest::checkSignature).count()
+         * == block.getOperations().size();
+         * return validPrevHash && Arrays.equals(rehash, block.getHash()) && (numOps < 1
+         * || numOps > maxOpsPerBlock) && !validOps && signedOps;
+         */
         // rehash and check if hash is equal
-        byte[] rehash = Crypto.digest(block.blockContentsWithoutHash());
-        boolean validPrevHash = Arrays.equals(block.getPreviousHash(), blocks.get(blocks.size() - 1).getHash());
+        Block lastBlock = blocks.get(blocks.size() - 1);
+        if (!Arrays.equals(block.getPreviousHash(), lastBlock.getHash()))
+            return false;
+
         int numOps = block.getOperations().size();
-        boolean validOps = block.getOperations().stream().map(ClientRequest::getRequestId).noneMatch(operations::contains);
-        //Check ops signatures
-        //TODO missing: check op signatures and check if there are repeated ops inside block; optimize
-        boolean signedOps = block.getOperations().stream().filter(ClientRequest::checkSignature).count() == block.getOperations().size();
-        return validPrevHash && Arrays.equals(rehash, block.getHash()) && (numOps < 1 || numOps > maxOpsPerBlock) && !validOps && signedOps;
+        if (numOps < 1 || numOps > maxOpsPerBlock)
+            return false;
+
+        if (block.getOperations().stream().map(ClientRequest::getRequestId).anyMatch(operations::contains))
+            return false;
+
+        if (block.getOperations().stream().anyMatch(op -> !op.checkSignature()))
+            return false;
+
+        byte[] rehash = Crypto.digest(block.blockContentsWithoutHash());
+        if (!Arrays.equals(rehash, block.getHash()))
+            return false;
+            
+        return true;
+
     }
 
     public boolean containsOperation(ClientRequest op) {
