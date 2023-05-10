@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.util.Objects;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
@@ -63,6 +64,19 @@ public class ClientRequest extends ProtoRequest {
 			throw new RuntimeException(e);
 		}
 		return ByteBufUtil.getBytes(buf);
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		ClientRequest that = (ClientRequest) o;
+		return Objects.equals(requestId, that.requestId);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(requestId);
 	}
 
 	@Override

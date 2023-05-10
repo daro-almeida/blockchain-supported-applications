@@ -32,10 +32,11 @@ public class BlockChain {
     }
 
     /*
-     * Parameter is sequence number from consensus
+     * Parameter is sequence number from consensus.
      */
     public void addBlock(int seq, Block block) {
-        // para todas as ops do bloco colocar no set de ops
+        assert block.getSignature() != null;
+
         block.getOperations().forEach(req -> operations.add(req.getRequestId()));
 
         consensusBlocks.put(seq, block);

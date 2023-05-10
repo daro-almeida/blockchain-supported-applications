@@ -11,18 +11,16 @@ import utils.Utils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.function.Consumer;
 
-public class Block implements Iterable<ClientRequest> {
+public class Block {
 
     private final byte[] hash;
     private final byte[] previousHash;
     private final int replicaId;// identity of the replica that generated the block and its signature.
     private final List<ClientRequest> operations;
+
     private byte[] signature;
 
     public Block(byte[] previousHash, List<ClientRequest> operations, int replicaId) {
@@ -32,13 +30,11 @@ public class Block implements Iterable<ClientRequest> {
         this.hash = Crypto.digest(blockContentsWithoutHash());
     }
 
-    private Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId, byte[] signature) {
+    private Block(byte[] hash, byte[] prevHash, List<ClientRequest> ops, int replicaId) {
         this.hash = hash;
         this.previousHash = prevHash;
         this.operations = ops;
         this.replicaId = replicaId;
-        this.signature = signature;
-
     }
 
     public byte[] getHash() {
@@ -53,12 +49,12 @@ public class Block implements Iterable<ClientRequest> {
         return replicaId;
     }
 
-    public List<ClientRequest> getOperations() {
-        return operations;
-    }
-
     public byte[] getPreviousHash() {
         return previousHash;
+    }
+
+    public List<ClientRequest> getOperations() {
+        return operations;
     }
 
     public byte[] blockContentsWithoutHash() {
@@ -100,28 +96,19 @@ public class Block implements Iterable<ClientRequest> {
      * Generates a signature for the block using the provided key. Owner of key
      * should be that of the replica ID.
      */
-    public void sign(PrivateKey key) {
+    public byte[] sign(PrivateKey key) {
         this.signature = SignaturesHelper.generateSignature(serialized(), key);
+        return signature;
     }
 
-    /*
-     * Verifies the signature of the block using the provided public key. Public key
-     * should be that of the replica ID.
-     */
-    public boolean checkSignature(PublicKey publicKey) {
-        return SignaturesHelper.checkSignature(serialized(), signature, publicKey);
-    }
-
-    public static ISerializer<Block> getSerializer() {
-        return serializer;
+    public void setSignature(byte[] signature) {
+        this.signature = signature;
     }
 
     public static ISerializer<Block> serializer = new ISerializer<>() {
 
         @Override
         public void serialize(Block block, ByteBuf out) throws IOException {
-            if (block.signature == null)
-                throw new RuntimeException("Block not signed");
             Utils.byteArraySerializer.serialize(block.hash, out);
             Utils.byteArraySerializer.serialize(block.previousHash, out);
             out.writeInt(block.replicaId);
@@ -130,8 +117,6 @@ public class Block implements Iterable<ClientRequest> {
             for (ClientRequest op : block.operations) {
                 out.writeBytes(op.toBytes());
             }
-
-            Utils.byteArraySerializer.serialize(block.signature, out);
         }
 
         @Override
@@ -146,19 +131,7 @@ public class Block implements Iterable<ClientRequest> {
                 ops.add(ClientRequest.serializer.deserialize(in));
             }
 
-            byte[] signature = Utils.byteArraySerializer.deserialize(in);
-
-            return new Block(hash, prevHash, ops, replicaId, signature);
+            return new Block(hash, prevHash, ops, replicaId);
         }
     };
-
-    @Override
-    public Iterator<ClientRequest> iterator() {
-        return operations.iterator();
-    }
-
-    @Override
-    public void forEach(Consumer<? super ClientRequest> action) {
-        operations.forEach(action);
-    }
 }

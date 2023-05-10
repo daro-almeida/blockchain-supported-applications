@@ -128,7 +128,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		registerMessageSerializer(peerChannel, StartClientRequestSuspectMessage.MESSAGE_ID,
 				StartClientRequestSuspectMessage.serializer);
 
-		if (this.view.getPrimary().equals(this.self)) {
+		if (amLeader()) {
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout + START_INTERVAL);
 		} else {
 			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout + START_INTERVAL);
@@ -138,21 +138,21 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ---------------------------------------------- REQUEST HANDLER -----------------------------------------
+	 * REQUEST HANDLERS
 	 */
 
 	// TODO later implement this for processing new Blocks
 	private void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
 
-		logger.info("Proposing: " + req.getRequestId());
+		logger.debug("Received client request: " + req.getRequestId());
 
 		if (!blockChain.containsOperation(req.getRequestId())) {
-			logger.warn("Received repeated request from node{}: {} ", req.getRequestId());
+			logger.warn("Received repeated request from app: {} ", req.getRequestId());
 			return;
 		}
 
-		if (this.view.getPrimary().equals(this.self)) {
+		if (amLeader()) {
 			blockOps.add(req);
 			submitFullBlock(false);
 			cancelTimer(noOpTimer);
@@ -195,8 +195,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ------------------------------------------- NOTIFICATION HANDLER
-	 * ---------------------------------------
+	 * NOTIFICATION HANDLERS
 	 */
 
 	private void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
@@ -207,9 +206,7 @@ public class BlockChainProtocol extends GenericProtocol {
 				+ notif.getView().getPrimary().id());
 		this.view = notif.getView();
 
-		leaderSuspectTimers.keySet().forEach(reqId -> {
-			cancelTimer(leaderSuspectTimers.get(reqId));
-		});
+		leaderSuspectTimers.keySet().forEach(reqId -> cancelTimer(leaderSuspectTimers.get(reqId)));
 		leaderSuspectTimers.clear();
 
 		pendingRequests.forEach((reqId, pendingRequest) -> {
@@ -217,13 +214,12 @@ public class BlockChainProtocol extends GenericProtocol {
 			handleClientRequest(pendingRequest.request(), BlockChainProtocol.PROTO_ID);
 		});
 
-		if (this.view.getPrimary().equals(this.self)) {
-			cancelTimer(noOpTimer);
-			cancelTimer(leaderIdleTimer);
+		cancelTimer(noOpTimer);
+		cancelTimer(leaderIdleTimer);
+		cancelTimer(forceBlockTimer);
+		if (amLeader()) {
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 		} else {
-			cancelTimer(noOpTimer);
-			cancelTimer(leaderIdleTimer);
 			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
 		}
 	}
@@ -245,6 +241,7 @@ public class BlockChainProtocol extends GenericProtocol {
 				// send all pending ops
 				logger.debug("Resubmitting pending requests");
 				block.getOperations().stream()
+						.distinct()
 						.filter(req -> req.checkSignature() && pendingRequests.containsKey(req.getRequestId()))
 						.forEach(req -> handleClientRequest(req, BlockChainProtocol.PROTO_ID));
 
@@ -252,6 +249,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
+		block.setSignature(notif.getSignature());
 		blockChain.addBlock(notif.getSeqN(), block);
 		logger.info("Committed block seqN=" + notif.getSeqN());
 
@@ -272,8 +270,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ---------------------------------------------- MESSAGE HANDLER
-	 * -----------------------------------------
+	 * MESSAGE HANDLERS
 	 */
 
 	private void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol,
@@ -301,7 +298,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		logger.warn("Received unhandled requests from node{}: {} ", msg.getNodeId(), msg.getRequests());
 
 		Set<UUID> unhandledRequestsHere = msg.getRequests().stream()
-				.filter(req -> blockChain.containsOperation(req))
+				.filter(req -> !blockChain.containsOperation(req))
 				.map(ClientRequest::getRequestId)
 				.collect(Collectors.toSet());
 
@@ -327,7 +324,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		Set<UUID> unhandledRequestsHere = msg.getRequestIds().stream()
-				.filter(req -> blockChain.containsOperation(req))
+				.filter(req -> !blockChain.containsOperation(req))
 				.collect(Collectors.toSet());
 		if (unhandledRequestsHere.isEmpty())
 			return;
@@ -336,8 +333,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ----------------------------------------------- TIMER HANDLER
-	 * ------------------------------------------
+	 * TIMER HANDLERS
 	 */
 
 	private void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
@@ -382,7 +378,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
-		assert this.self.equals(this.view.getPrimary());
+		assert amLeader();
 
 		logger.info("Forcing block creation");
 		submitFullBlock(true);
@@ -390,8 +386,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ----------------------------------------------- AUXILIARY FNS
-	 * ------------------------------------------
+	 * AUXILIARY METHODS
 	 */
 
 	private void processSuspectsIds(Set<UUID> requestIds, int nodeId) {
@@ -417,7 +412,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	private boolean isNoOp(byte[] op) {
 		if (Arrays.equals(op, new byte[0])) {
 			logger.info("Received no-op");
-			if (!this.view.getPrimary().equals(this.self)) {
+			if (!amLeader()) {
 				cancelTimer(leaderIdleTimer);
 				leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
 			}
@@ -469,33 +464,28 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ----------------------------------------------- APP INTERFACE
-	 * -----------------------------------------
+	 * Create block and fill with ops. When block is full, send to Consensus Protocol.
 	 */
-
 	private void submitFullBlock(boolean force) {
-		// create block and fill with ops. when block is full, send to pbft
-		// (forceblocktimer)
+		assert blockOps.size() <= maxOps && blockOps.size() > 0;
 
-		//setup timer if its the first operation we are receiving
+		//setup timer if it's the first operation we are receiving
 		if (blockOps.size() == 1) {
 			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
-		}
+		} else if (blockOps.size() == maxOps || force) {
+			var block = blockChain.newBlock(blockOps, self.id());
+			var signature = block.sign(this.key);
+			var blockBytes = block.serialized();
 
-		var block = blockChain.newBlock(blockOps, self.id());
-		var blockBytes = block.serialized();
-		if (!blockChain.validateBlock(block)) {
-			logger.info("invalid block!");
-			return;
-		}
-		// TODO is this signing the block ??
-		var signature = SignaturesHelper.generateSignature(blockBytes, this.key);
-		if (blockOps.size() >= maxOps || force) {
-			cancelTimer(forceBlockTimer);
-			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
 			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
 			blockOps = new LinkedList<>();
+
+			cancelTimer(forceBlockTimer);
 		}
+	}
+
+	private boolean amLeader() {
+		return this.self.equals(this.view.getPrimary());
 	}
 
 	/*
