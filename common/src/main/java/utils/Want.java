@@ -10,21 +10,21 @@ public class Want {
 	private final float pricePerUnit;
 	
 	
-	public Want(String resourceType, int quantity, float price) {
-		this.setResourceType(resourceType);
-		this.setQuantity(quantity);
-		this.setPricePerUnit(price);
+	public Want(PublicKey cID, String resourceType, int quantity, float price) {
+        this.clientId = cID;
+        this.resourceType = resourceType;
+		this.decreaseQuantity(quantity);
+        this.pricePerUnit = price;
 		
 	}
+
+    public PublicKey getClientId() {
+        return clientId;
+    }
 
 
     public String getResourceType() {
         return resourceType;
-    }
-
-
-    public void setResourceType(String resourceType) {
-        this.resourceType = resourceType;
     }
 
 
@@ -33,8 +33,8 @@ public class Want {
     }
 
 
-    public void setQuantity(int quantity) {
-        this.quantity = quantity;
+    public void decreaseQuantity(int amount) {
+        this.quantity = quantity - amount;
     }
 
 
@@ -42,9 +42,5 @@ public class Want {
         return pricePerUnit;
     }
 
-
-    public void setPricePerUnit(float pricePerUnit) {
-        this.pricePerUnit = pricePerUnit;
-    }
     
 }

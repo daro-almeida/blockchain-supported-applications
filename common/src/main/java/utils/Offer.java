@@ -4,27 +4,27 @@ import java.security.PublicKey;
 
 public class Offer {
     
-    private PublicKey clientId;
-    private String resourceType;
+    private final PublicKey clientId;
+    private final String resourceType;
 	private int stock;
-	private float pricePerUnit;
+	private final float pricePerUnit;
 	
 	
-	public Offer(String resourceType, int stock, float price) {
-		this.setResourceType(resourceType);
-		this.setStock(stock);
-		this.setPricePerUnit(price);
+	public Offer(PublicKey cID, String resourceType, int stock, float price) {
+        this.clientId = cID;
+		this.resourceType = resourceType;
+		this.decreaseStock(stock);
+		this.pricePerUnit = price;
 		
 	}
 
 
-    public String getResourceType() {
-        return resourceType;
+    public PublicKey getClientId() {
+        return clientId;
     }
 
-
-    public void setResourceType(String resourceType) {
-        this.resourceType = resourceType;
+    public String getResourceType() {
+        return resourceType;
     }
 
 
@@ -42,8 +42,4 @@ public class Offer {
         return pricePerUnit;
     }
 
-
-    public void setPricePerUnit(float pricePerUnit) {
-        this.pricePerUnit = pricePerUnit;
-    }
 }
