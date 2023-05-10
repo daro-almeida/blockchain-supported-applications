@@ -145,7 +145,7 @@ public class BlockChainProtocol extends GenericProtocol {
 	private void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
 
-		byte[] request = req.toBytes();
+		logger.info("Proposing: " + req.getRequestId());
 
 		if (!blockChain.containsOperation(req.getRequestId())) {
 			logger.warn("Received repeated request from node{}: {} ", req.getRequestId());
@@ -153,17 +153,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		if (this.view.getPrimary().equals(this.self)) {
-			// TODO METODO PARA CRIAR BLOCO COM AS OPS PENDENTES (blockOps) E MANDAR PARA O PBFT
-			// FIXME this is simulating signing block for now
-			byte[] signature = SignaturesHelper.generateSignature(request, this.key);
-			// FIXME This assumes that a block only contains a single client request,
-			// implement many requests per block later
-			var propose = new ProposeRequest(request, signature);
-			logger.info("Proposing: " + req.getRequestId());
-			// create block and fill with ops. when block is full, send to pbft
-			// (forceblocktimer)
-			sendRequest(propose, PBFTProtocol.PROTO_ID);
-
+			blockOps.add(req);
+			submitFullBlock(false);
 			cancelTimer(noOpTimer);
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 		} else {
@@ -204,7 +195,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ------------------------------------------- NOTIFICATION HANDLER ---------------------------------------
+	 * ------------------------------------------- NOTIFICATION HANDLER
+	 * ---------------------------------------
 	 */
 
 	private void handleViewChangeNotification(ViewChange notif, short sourceProtoId) {
@@ -236,7 +228,6 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 	}
 
-
 	private void handleCommittedNotification(CommittedNotification notif, short protoID) {
 		byte[] blockBytes = notif.getBlock();
 
@@ -255,7 +246,7 @@ public class BlockChainProtocol extends GenericProtocol {
 				logger.debug("Resubmitting pending requests");
 				block.getOperations().stream()
 						.filter(req -> req.checkSignature() && pendingRequests.containsKey(req.getRequestId()))
-						.forEach( req -> handleClientRequest(req, BlockChainProtocol.PROTO_ID));
+						.forEach(req -> handleClientRequest(req, BlockChainProtocol.PROTO_ID));
 
 			}
 			return;
@@ -281,7 +272,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ---------------------------------------------- MESSAGE HANDLER -----------------------------------------
+	 * ---------------------------------------------- MESSAGE HANDLER
+	 * -----------------------------------------
 	 */
 
 	private void handleRedirectClientRequestMessage(RedirectClientRequestMessage msg, Host sender, short sourceProtocol,
@@ -289,20 +281,15 @@ public class BlockChainProtocol extends GenericProtocol {
 		if (!validateRedirectClientRequestMessage(msg))
 			return;
 
-		// TODO METODO PARA CRIAR BLOCO COM AS OPS PENDENTES (blockOps) E MANDAR PARA O PBFT
 		// checking if request is repeated
 		if (blockChain.containsOperation(msg.getRequest())) {
 			logger.warn("Received repeated request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
 			return;
 		}
-		var requestBytes = msg.getRequest().toBytes();
-		// FIXME this is simulating signing block for now
-		var signature = SignaturesHelper.generateSignature(requestBytes, this.key);
-		// FIXME This assumes that a block only contains a single client request,
-		// implement many requests per block later
-		var propose = new ProposeRequest(requestBytes, signature);
-		logger.info("Proposing redirected from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
-		sendRequest(propose, PBFTProtocol.PROTO_ID);
+
+		blockOps.add(msg.getRequest());
+		submitFullBlock(false);
+
 		cancelTimer(noOpTimer);
 	}
 
@@ -349,7 +336,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ----------------------------------------------- TIMER HANDLER ------------------------------------------
+	 * ----------------------------------------------- TIMER HANDLER
+	 * ------------------------------------------
 	 */
 
 	private void handleCheckUnhandledRequestsPeriodicTimer(CheckUnhandledRequestsPeriodicTimer t, long timerId) {
@@ -397,21 +385,13 @@ public class BlockChainProtocol extends GenericProtocol {
 		assert this.self.equals(this.view.getPrimary());
 
 		logger.info("Forcing block creation");
-		// TODO METODO PARA CRIAR BLOCO COM AS OPS PENDENTES (blockOps) E MANDAR PARA O PBFT
-		var block = blockChain.newBlock(blockOps, self.id());
-		var blockBytes = block.serialized();
-		if (!blockChain.validateBlock(block)) {
-			logger.info("invalid block!");
-			return;
-		}
-		var signature = SignaturesHelper.generateSignature(blockBytes, this.key);
-		sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
-		blockOps = new LinkedList<>();
+		submitFullBlock(true);
 
 	}
 
 	/*
-	 * ----------------------------------------------- AUXILIARY FNS ------------------------------------------
+	 * ----------------------------------------------- AUXILIARY FNS
+	 * ------------------------------------------
 	 */
 
 	private void processSuspectsIds(Set<UUID> requestIds, int nodeId) {
@@ -489,8 +469,34 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	/*
-	 * ----------------------------------------------- APP INTERFACE -----------------------------------------
+	 * ----------------------------------------------- APP INTERFACE
+	 * -----------------------------------------
 	 */
+
+	private void submitFullBlock(boolean force) {
+		// create block and fill with ops. when block is full, send to pbft
+		// (forceblocktimer)
+
+		//setup timer if its the first operation we are receiving
+		if (blockOps.size() == 1) {
+			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
+		}
+
+		var block = blockChain.newBlock(blockOps, self.id());
+		var blockBytes = block.serialized();
+		if (!blockChain.validateBlock(block)) {
+			logger.info("invalid block!");
+			return;
+		}
+		// TODO is this signing the block ??
+		var signature = SignaturesHelper.generateSignature(blockBytes, this.key);
+		if (blockOps.size() >= maxOps || force) {
+			cancelTimer(forceBlockTimer);
+			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
+			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
+			blockOps = new LinkedList<>();
+		}
+	}
 
 	/*
 	 * For RandomGenerationApp

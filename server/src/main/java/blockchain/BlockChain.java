@@ -42,14 +42,16 @@ public class BlockChain {
         blocks.put(blocks.size(), block);
     }
 
-    //TODO missing: check op signatures and check if there are repeated ops inside block; optimize
     public boolean validateBlock(Block block) {
         // rehash and check if hash is equal
         byte[] rehash = Crypto.digest(block.blockContentsWithoutHash());
         boolean validPrevHash = Arrays.equals(block.getPreviousHash(), blocks.get(blocks.size() - 1).getHash());
         int numOps = block.getOperations().size();
         boolean validOps = block.getOperations().stream().map(ClientRequest::getRequestId).noneMatch(operations::contains);
-        return validPrevHash && Arrays.equals(rehash, block.getHash()) && (numOps < 1 || numOps > maxOpsPerBlock) && !validOps;
+        //Check ops signatures
+        //TODO missing: check op signatures and check if there are repeated ops inside block; optimize
+        boolean signedOps = block.getOperations().stream().filter(ClientRequest::checkSignature).count() == block.getOperations().size();
+        return validPrevHash && Arrays.equals(rehash, block.getHash()) && (numOps < 1 || numOps > maxOpsPerBlock) && !validOps && signedOps;
     }
 
     public boolean containsOperation(ClientRequest op) {
