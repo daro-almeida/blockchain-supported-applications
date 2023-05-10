@@ -199,22 +199,20 @@ public class OpenGoodsMarket extends GenericProtocol {
                     sourceProto, from, 0);
         }
 
-        offers.put(io.getResourceType(), null);
-
     }
 
     public void handleIssueWantMessage(IssueWant iw, Host from, short sourceProto, int channelID) {
         logger.info("Received IssueWant (" + iw.getRid() + " from " + from + "(client" + iw.getcID() + ")");
         ops.put(iw.getRid(), iw);
+        opsType.put(iw.getRid(), OperationType.ISSUEWANT);
 
         if (wallets.getClientAmount(iw.getcID()) < iw.getcCSDs()) {
             opStatus.put(iw.getRid(), OperationStatusReply.Status.FAILED);
         }
 
         var signature = iw.getSignature();
-        var req = new ClientRequest(iw.getRid(), iw.getOpBytes(), signature, iw.getcID());
+        ClientRequest req = new ClientRequest(iw.getRid(), iw.getOpBytes(), signature, iw.getcID());
         sendRequest(req, BlockChainProtocol.PROTO_ID);
-        opsType.put(iw.getRid(), OperationType.ISSUEWANT);
         GenericClientReply ack = new GenericClientReply(req.getRequestId());
         reqDestinations.put(req, from);
         opStatus.put(iw.getRid(), OperationStatusReply.Status.PENDING);
@@ -239,9 +237,21 @@ public class OpenGoodsMarket extends GenericProtocol {
     public void handleCancelMessage(Cancel c, Host from, short sourceProto, int channelID) {
         var rID = c.getrID();
         logger.info("Received Cancel for operation " + rID + " from " + from);
+        ops.put(c.getrID(), c);
 
         // rejected if the guy who wants to cancel is not the same guy who did the
         // operation being cancelled
+        if (opsType.get(rID) == OperationType.ISSUEOFFER) {
+            IssueOffer io = (IssueOffer) ops.get(rID);
+            if (c.getcID() != io.getcID()) {
+                opStatus.put(rID, OperationStatusReply.Status.REJECTED);
+            }
+        } else if (opsType.get(rID) == OperationType.ISSUEWANT) {
+            IssueWant iw = (IssueWant) ops.get(rID);
+            if (c.getcID() != iw.getcID()) {
+                opStatus.put(rID, OperationStatusReply.Status.REJECTED);
+            }
+        }
 
         var signature = c.getSignature();
         var req = new ClientRequest(rID, c.getOpBytes(), signature, c.getcID());
@@ -315,6 +325,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         logger.info("Received deposit of " + amount + " to client" + clientId + " from the Exchange ("
                 + from + ")");
         ops.put(d.getRid(), d);
+        opsType.put(d.getRid(), OperationType.DEPOSIT);
 
         if (!clientId.equals(exchangePk)) {
             opStatus.put(d.getRid(), OperationStatusReply.Status.REJECTED);
@@ -327,7 +338,6 @@ public class OpenGoodsMarket extends GenericProtocol {
         var signature = d.getSignature();
         var req = new ClientRequest(d.getRid(), d.getOpBytes(), signature, clientId);
         sendRequest(req, BlockChainProtocol.PROTO_ID);
-        opsType.put(d.getRid(), OperationType.DEPOSIT);
         GenericClientReply ack = new GenericClientReply(req.getRequestId());
         reqDestinations.put(req, from);
 
@@ -359,6 +369,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         logger.info("Received withdrawal of " + amount + " to client" + clientId + " from the Exchange ("
                 + from + ")");
         ops.put(w.getRid(), w);
+        opsType.put(w.getRid(), OperationType.WITHDRAWAL);
 
         if (!clientId.equals(exchangePk)) {
             opStatus.put(w.getRid(), OperationStatusReply.Status.REJECTED);
@@ -373,7 +384,6 @@ public class OpenGoodsMarket extends GenericProtocol {
                 var signature = w.getSignature();
                 var req = new ClientRequest(w.getRid(), w.getOpBytes(), signature, clientId);
                 sendRequest(req, BlockChainProtocol.PROTO_ID);
-                opsType.put(w.getRid(), OperationType.WITHDRAWAL);
                 GenericClientReply ack = new GenericClientReply(req.getRequestId());
                 reqDestinations.put(req, from);
                 opStatus.put(w.getRid(), OperationStatusReply.Status.PENDING);
@@ -398,72 +408,138 @@ public class OpenGoodsMarket extends GenericProtocol {
     private void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
 
         ClientRequest client = notif.getRequest();
-        UUID clientId = client.getRequestId();
+        UUID requestId = client.getRequestId();
 
-        sendMessage(clientChannel, new OperationStatusReply(clientId, OperationStatusReply.Status.EXECUTED),
+        sendMessage(clientChannel, new OperationStatusReply(requestId, OperationStatusReply.Status.EXECUTED),
                 sourceProto, reqDestinations.get(client), 0);
 
-        if (opsType.get(clientId) == OperationType.ISSUEOFFER) {
-            IssueOffer io = (IssueOffer) ops.get(clientId);
-
-            if (wants.containsKey(io.getResourceType()) && offers.containsKey(io.getResourceType())) {
-                // TODO needs to make sure thee wants set is sorted
-                for (Want want : wants.get(io.getResourceType())) {
-                    int quantity = want.getQuantity();
-                    float wantPrice = want.getPricePerUnit();
-                    // TODO needs to make sure thee offers set is sorted
-                    for (Offer offer : offers.get(io.getResourceType())) {
-                        int stock = offer.getStock();
-                        float offerPrice = offer.getPricePerUnit();
-                        if (wantPrice >= offerPrice) {
-                            if (stock > quantity) {
-                                offer.decreaseStock(quantity);
-                                wallets.increaseClientPendingAmount(offer.getClientId(), quantity * wantPrice);
-                                wallets.increaseClientAmount(offer.getClientId(), quantity * wantPrice);
-                                wallets.decreaseClientAmount(want.getClientId(), quantity * wantPrice);
-                                wants.get(io.getResourceType()).remove(want);
-                            } else if (stock == quantity) {
-                                wallets.increaseClientPendingAmount(io.getcID(), quantity * wantPrice);
-                                wallets.increaseClientAmount(io.getcID(), quantity * wantPrice);
-                                wallets.decreaseClientAmount(want.getClientId(), quantity * wantPrice);
-                                offers.get(io.getResourceType()).remove(offer);
-                                wants.get(io.getResourceType()).remove(want);
-                            } else {
-                                want.decreaseQuantity(stock);
-                                int amountBought = quantity - stock;
-                                wallets.increaseClientPendingAmount(offer.getClientId(), amountBought * wantPrice);
-                                wallets.increaseClientAmount(offer.getClientId(), amountBought * wantPrice);
-                                wallets.decreaseClientAmount(want.getClientId(), amountBought * wantPrice);
-                                offers.get(io.getResourceType()).remove(offer);
-                            }
-                        }
-                    }
-
-                }
-
-            }
-
-        } else if (opsType.get(clientId) == OperationType.CANCEL) {
-            // depois de cancelled retirar a offer ou want
-            Cancel c = (Cancel) ops.get(clientId);
-            if (opStatus.containsKey(c.getrID())) {
-                opStatus.put(c.getrID(), OperationStatusReply.Status.CANCELLED);
-                ops.remove(c.getrID());
-            }
-        } else if (opsType.get(clientId) == OperationType.DEPOSIT) {
-            Deposit d = (Deposit) ops.get(clientId);
-            if (wallets.hasWallet(d.getClientID())) {
-                wallets.increaseClientAmount(d.getClientID(), d.getAmount());
-            } else {
-                wallets.createWallet(d.getClientID(), d.getAmount());
-            }
-        } else if (opsType.get(clientId) == OperationType.WITHDRAWAL) {
-            Withdrawal w = (Withdrawal) ops.get(clientId);
-            wallets.decreaseClientAmount(w.getClientID(), w.getAmount());
+        if (opsType.get(requestId) == OperationType.ISSUEOFFER) {
+            handleExecutedIssueOffer(requestId);
+        } else if (opsType.get(requestId) == OperationType.ISSUEWANT) {
+            handleExecutedIssueWant(requestId);
+        } else if (opsType.get(requestId) == OperationType.CANCEL) {
+            handleExecutedCancel(requestId);
+        } else if (opsType.get(requestId) == OperationType.DEPOSIT) {
+            handleExecutedDeposit(requestId);
+        } else if (opsType.get(requestId) == OperationType.WITHDRAWAL) {
+            handleExecutedWithdrawal(requestId);
         }
 
+    }
 
+    private void handleExecutedIssueOffer(UUID requestId) {
+        IssueOffer io = (IssueOffer) ops.get(requestId);
+        SortedSet<Offer> setOffers = offers.get(io.getResourceType());
+        // FIXME isto tá horrível mas não tava a conseguir arranjar maneira de ir buscar
+        // o offer com o a mesma publicKey
+        Offer offer = null;
+        for (Offer off : setOffers) {
+            if (off.getClientId().equals(io.getcID())) {
+                offer = off;
+            }
+        }
+        int stock = offer.getStock();
+        float offerPrice = offer.getPricePerUnit();
+        if (wants.containsKey(offer.getResourceType())) {
+            // TODO needs to make sure the wants set is sorted
+            for (Want w : wants.get(offer.getResourceType())) {
+                int quantity = w.getQuantity();
+                float wantPrice = w.getPricePerUnit();
+                if (wantPrice >= offerPrice) {
+                    if (stock > quantity) {
+                        offer.decreaseStock(quantity);
+                        wallets.increaseClientPendingAmount(offer.getClientId(), quantity * wantPrice);
+                        wallets.increaseClientAmount(offer.getClientId(), quantity * wantPrice);
+                        wallets.decreaseClientAmount(w.getClientId(), quantity * wantPrice);
+                        wants.get(offer.getResourceType()).remove(w);
+                    } else if (stock == quantity) {
+                        wallets.increaseClientPendingAmount(offer.getClientId(), quantity * wantPrice);
+                        wallets.increaseClientAmount(offer.getClientId(), quantity * wantPrice);
+                        wallets.decreaseClientAmount(w.getClientId(), quantity * wantPrice);
+                        offers.get(offer.getResourceType()).remove(offer);
+                        wants.get(offer.getResourceType()).remove(w);
+                        return;
+                    } else {
+                        w.decreaseQuantity(stock);
+                        wallets.increaseClientPendingAmount(offer.getClientId(), stock * wantPrice);
+                        wallets.increaseClientAmount(offer.getClientId(), stock * wantPrice);
+                        wallets.decreaseClientAmount(w.getClientId(), stock * wantPrice);
+                        offers.get(offer.getResourceType()).remove(offer);
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
 
+        }
+    }
+
+    private void handleExecutedIssueWant(UUID requestId) {
+        IssueWant iw = (IssueWant) ops.get(requestId);
+        SortedSet<Want> setWants = wants.get(iw.getResourceType());
+        // FIXME isto tá horrível mas não tava a conseguir arranjar maneira de ir buscar
+        // o offer com o a mesma publicKey
+        Want want = null;
+        for (Want w : setWants) {
+            if (w.getClientId().equals(iw.getcID())) {
+                want = w;
+            }
+        }
+        int quantity = want.getQuantity();
+        float wantPrice = want.getPricePerUnit();
+        for (Offer o : offers.get(iw.getResourceType())) {
+            int offerStock = o.getStock();
+            float price = o.getPricePerUnit();
+            if (wantPrice >= price) {
+                if (offerStock > quantity) {
+                    o.decreaseStock(quantity);
+                    wallets.increaseClientPendingAmount(o.getClientId(), quantity * wantPrice);
+                    wallets.increaseClientAmount(o.getClientId(), quantity * wantPrice);
+                    wallets.decreaseClientAmount(want.getClientId(), quantity * wantPrice);
+                    wants.get(iw.getResourceType()).remove(want);
+                    return;
+                } else if (offerStock == quantity) {
+                    wallets.increaseClientPendingAmount(o.getClientId(), quantity * wantPrice);
+                    wallets.increaseClientAmount(o.getClientId(), quantity * wantPrice);
+                    wallets.decreaseClientAmount(want.getClientId(), quantity * wantPrice);
+                    offers.get(iw.getResourceType()).remove(o);
+                    wants.get(iw.getResourceType()).remove(want);
+                    return;
+                } else {
+                    want.decreaseQuantity(offerStock);
+                    wallets.increaseClientPendingAmount(o.getClientId(), offerStock * wantPrice);
+                    wallets.increaseClientAmount(o.getClientId(), offerStock * wantPrice);
+                    wallets.decreaseClientAmount(want.getClientId(), offerStock * wantPrice);
+                    offers.get(iw.getResourceType()).remove(o);
+                }
+            } else {
+                return;
+            }
+        }
+    }
+
+    private void handleExecutedCancel(UUID requestId) {
+        // TODO depois de cancelled retirar a offer ou want
+        Cancel c = (Cancel) ops.get(requestId);
+        if (opStatus.containsKey(c.getrID())) {
+            opStatus.put(c.getrID(), OperationStatusReply.Status.CANCELLED);
+            ops.remove(c.getrID());
+        }
+    }
+
+    private void handleExecutedDeposit(UUID requestId) {
+        Deposit d = (Deposit) ops.get(requestId);
+        if (wallets.hasWallet(d.getClientID())) {
+            wallets.increaseClientAmount(d.getClientID(), d.getAmount());
+        } else {
+            wallets.createWallet(d.getClientID(), d.getAmount());
+        }
+    }
+
+    private void handleExecutedWithdrawal(UUID requestId) {
+        Withdrawal w = (Withdrawal) ops.get(requestId);
+        wallets.decreaseClientAmount(w.getClientID(), w.getAmount());
     }
 
     private void uponClientConnectionUp(ClientUpEvent event, int channel) {
