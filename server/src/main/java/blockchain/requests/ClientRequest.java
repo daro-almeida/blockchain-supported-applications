@@ -46,6 +46,14 @@ public class ClientRequest extends ProtoRequest {
 		return requestId;
 	}
 
+	public byte[] getOperation() {
+		return operation;
+	}
+
+	public PublicKey getPublicKey() {
+		return publicKey;
+	}
+
 	public boolean checkSignature() {
 		ByteBuffer buf = ByteBuffer.allocate(16 + operation.length + publicKey.getEncoded().length);
 		buf.putLong(requestId.getMostSignificantBits());

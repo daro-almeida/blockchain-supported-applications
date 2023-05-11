@@ -1,10 +1,8 @@
 package app.messages.exchange.requests;
 
+import app.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+import pt.unl.fct.di.novasys.network.ISerializer;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -14,46 +12,32 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.UUID;
 
-public class Withdrawal extends SignedProtoMessage{
+public class Withdrawal extends WriteOperation {
 
 	public final static short MESSAGE_ID = 302;
 	
-	private UUID rid;
-	private PublicKey clientID;
-	private float amount;
+	private final UUID rid;
+	private final PublicKey clientID;
+	private final float amount;
 	
 	public Withdrawal(PublicKey cID, float a) {
-		super(Withdrawal.MESSAGE_ID);
+		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
 		this.rid = UUID.randomUUID();
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	public Withdrawal(UUID rid, PublicKey cID, float a) {
-		super(Withdrawal.MESSAGE_ID);
+	private Withdrawal(UUID rid, PublicKey cID, float a) {
+		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
 		this.rid = rid;
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	public byte[] getSignature() {
-		return signature;
-	}
-
-	public byte[] getOpBytes() {
-		ByteBuf buf = Unpooled.buffer();
-		try {
-			serializer.serialize(this, buf);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-		return ByteBufUtil.getBytes(buf);
-	}
-	
-	public final static SignedMessageSerializer<Withdrawal> serializer = new SignedMessageSerializer<Withdrawal>() {
+	public final static ISerializer<Withdrawal> serializer = new ISerializer<>() {
 
 		@Override
-		public void serializeBody(Withdrawal w, ByteBuf out) throws IOException {
+		public void serialize(Withdrawal w, ByteBuf out) throws IOException {
 			out.writeLong(w.rid.getMostSignificantBits());
 			out.writeLong(w.rid.getLeastSignificantBits());
 			byte[] pk = w.clientID.getEncoded();
@@ -63,7 +47,7 @@ public class Withdrawal extends SignedProtoMessage{
 		}
 
 		@Override
-		public Withdrawal deserializeBody(ByteBuf in) throws IOException {
+		public Withdrawal deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			short l = in.readShort();
@@ -72,9 +56,7 @@ public class Withdrawal extends SignedProtoMessage{
 			PublicKey cID = null;
 			try {
 				cID = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(pk));
-			} catch (InvalidKeySpecException e) {
-				e.printStackTrace();
-			} catch (NoSuchAlgorithmException e) {
+			} catch (InvalidKeySpecException | NoSuchAlgorithmException e) {
 				e.printStackTrace();
 			}
 			float a = in.readFloat();
@@ -82,34 +64,17 @@ public class Withdrawal extends SignedProtoMessage{
 		}
 	
 	};
-	
-	@Override
-	public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-		return Withdrawal.serializer;
-	}
 
 	public float getAmount() {
 		return amount;
-	}
-
-	public void setAmount(float amount) {
-		this.amount = amount;
 	}
 
 	public PublicKey getClientID() {
 		return clientID;
 	}
 
-	public void setClientID(PublicKey clientID) {
-		this.clientID = clientID;
-	}
-
 	public UUID getRid() {
 		return rid;
-	}
-
-	public void setRid(UUID rid) {
-		this.rid = rid;
 	}
 
 }

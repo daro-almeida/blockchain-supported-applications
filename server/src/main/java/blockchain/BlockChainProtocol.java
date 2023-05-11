@@ -141,7 +141,6 @@ public class BlockChainProtocol extends GenericProtocol {
 	 * REQUEST HANDLERS
 	 */
 
-	// TODO later implement this for processing new Blocks
 	private void handleClientRequest(ClientRequest req, short protoID) {
 		assert this.view != null;
 

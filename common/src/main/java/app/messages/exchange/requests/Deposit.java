@@ -1,10 +1,8 @@
 package app.messages.exchange.requests;
 
+import app.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+import pt.unl.fct.di.novasys.network.ISerializer;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -14,47 +12,32 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.UUID;
 
-public class Deposit extends SignedProtoMessage{
+public class Deposit extends WriteOperation {
 
 	public final static short MESSAGE_ID = 301;
 	
-	private UUID rid;
-	private PublicKey clientID;
-	private float amount;
+	private final UUID rid;
+	private final PublicKey clientID;
+	private final float amount;
 	
 	public Deposit(PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID);
+		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
 		this.rid = UUID.randomUUID();
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	public Deposit(UUID rid, PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID);
+	private Deposit(UUID rid, PublicKey cID, float a) {
+		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
 		this.rid = rid;
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	public byte[] getSignature() {
-		return signature;
-	}
-
-	public byte[] getOpBytes() {
-		ByteBuf buf = Unpooled.buffer();
-		try {
-			serializer.serialize(this, buf);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-		return ByteBufUtil.getBytes(buf);
-	}
-
-	
-	public final static SignedMessageSerializer<Deposit> serializer = new SignedMessageSerializer<Deposit>() {
+	public final static ISerializer<Deposit> serializer = new ISerializer<>() {
 
 		@Override
-		public void serializeBody(Deposit d, ByteBuf out) throws IOException {
+		public void serialize(Deposit d, ByteBuf out) throws IOException {
 			out.writeLong(d.rid.getMostSignificantBits());
 			out.writeLong(d.rid.getLeastSignificantBits());
 			byte[] pk = d.clientID.getEncoded();
@@ -64,7 +47,7 @@ public class Deposit extends SignedProtoMessage{
 		}
 
 		@Override
-		public Deposit deserializeBody(ByteBuf in) throws IOException {
+		public Deposit deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			short l = in.readShort();
@@ -73,9 +56,7 @@ public class Deposit extends SignedProtoMessage{
 			PublicKey cID = null;
 			try {
 				cID = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(pk));
-			} catch (InvalidKeySpecException e) {
-				e.printStackTrace();
-			} catch (NoSuchAlgorithmException e) {
+			} catch (InvalidKeySpecException | NoSuchAlgorithmException e) {
 				e.printStackTrace();
 			}
 			float a = in.readFloat();
@@ -83,34 +64,18 @@ public class Deposit extends SignedProtoMessage{
 		}
 	
 	};
-	
-	@Override
-	public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-		return Deposit.serializer;
-	}
 
 	public float getAmount() {
 		return amount;
-	}
-
-	public void setAmount(float amount) {
-		this.amount = amount;
 	}
 
 	public PublicKey getClientID() {
 		return clientID;
 	}
 
-	public void setClientID(PublicKey clientID) {
-		this.clientID = clientID;
-	}
 
 	public UUID getRid() {
 		return rid;
-	}
-
-	public void setRid(UUID rid) {
-		this.rid = rid;
 	}
 
 }

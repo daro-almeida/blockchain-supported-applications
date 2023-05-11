@@ -5,7 +5,12 @@ import io.netty.buffer.ByteBufUtil;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
 import java.util.UUID;
 
 public class Utils {
@@ -76,4 +81,20 @@ public class Utils {
         }
         return bytes;
     }
+
+    public static String getAddress(String inter) throws SocketException {
+        NetworkInterface byName = NetworkInterface.getByName(inter);
+        if (byName == null) {
+            throw new RuntimeException("No interface with name " + inter);
+        }
+        Enumeration<InetAddress> addresses = byName.getInetAddresses();
+        InetAddress currentAddress;
+        while (addresses.hasMoreElements()) {
+            currentAddress = addresses.nextElement();
+            if (currentAddress instanceof Inet4Address)
+                return currentAddress.getHostAddress();
+        }
+        throw new RuntimeException("No IPv4 address found for interface " + inter);
+    }
+
 }

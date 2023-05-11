@@ -1,10 +1,8 @@
 package app.messages.client.requests;
 
+import app.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+import pt.unl.fct.di.novasys.network.ISerializer;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -14,83 +12,70 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.UUID;
 
-public class Cancel extends SignedProtoMessage {
+public class Cancel extends WriteOperation {
 
 	public final static short MESSAGE_ID = 305;
 	
-	private UUID rID;
-	private PublicKey cID;
+	private final UUID rID;
+	private final UUID targetRequest;
+	private final PublicKey cID;
 	
-	public Cancel(UUID rID, PublicKey cID) {
-		super(Cancel.MESSAGE_ID);
-		this.rID = rID;
+	public Cancel(UUID targetRequest, PublicKey cID) {
+		super(Cancel.MESSAGE_ID, OperationType.CANCEL);
+		this.rID = UUID.randomUUID();
+		this.targetRequest = targetRequest;
 		this.cID = cID;
 	}
 
-	public byte[] getSignature() {
-		return signature;
-	}
-
-	public byte[] getOpBytes() {
-		ByteBuf buf = Unpooled.buffer();
-		try {
-			serializer.serialize(this, buf);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-		return ByteBufUtil.getBytes(buf);
+	private Cancel(UUID rID, UUID targetRequest, PublicKey cID) {
+		super(Cancel.MESSAGE_ID, OperationType.CANCEL);
+		this.rID = rID;
+		this.targetRequest = targetRequest;
+		this.cID = cID;
 	}
 	
-	public final static SignedMessageSerializer<Cancel> serializer = new SignedMessageSerializer<Cancel>() {
+	public final static ISerializer<Cancel> serializer = new ISerializer<>() {
 
 		@Override
-		public void serializeBody(Cancel c, ByteBuf out) throws IOException {
+		public void serialize(Cancel c, ByteBuf out) throws IOException {
 			out.writeLong(c.rID.getMostSignificantBits());
 			out.writeLong(c.rID.getLeastSignificantBits());
+			out.writeLong(c.targetRequest.getMostSignificantBits());
+			out.writeLong(c.targetRequest.getLeastSignificantBits());
 			byte[] pk = c.cID.getEncoded();
 			out.writeShort(pk.length);
 			out.writeBytes(pk);
 		}
 
 		@Override
-		public Cancel deserializeBody(ByteBuf in) throws IOException {
+		public Cancel deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
+			long msb2 = in.readLong();
+			long lsb2 = in.readLong();
 			short l = in.readShort();
 			byte[] pk = new byte[l];
 			in.readBytes(pk);
 			PublicKey cID = null;
 			try {
 				cID = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(pk));
-			} catch (InvalidKeySpecException e) {
-				e.printStackTrace();
-			} catch (NoSuchAlgorithmException e) {
+			} catch (InvalidKeySpecException | NoSuchAlgorithmException e) {
 				e.printStackTrace();
 			}
-			
-			return new Cancel(new UUID(msb,lsb), cID);
+
+			return new Cancel(new UUID(msb,lsb), new UUID(msb2, lsb2), cID);
 		}
 	};
-
-	@Override
-	public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-		return Cancel.serializer;
-	}
 
 	public UUID getrID() {
 		return rID;
 	}
 
-	public void setrID(UUID rID) {
-		this.rID = rID;
+	public UUID getTargetRequest() {
+		return targetRequest;
 	}
 
 	public PublicKey getcID() {
 		return cID;
 	}
-
-	public void setcID(PublicKey cID) {
-		this.cID = cID;
-	}
-	
 }

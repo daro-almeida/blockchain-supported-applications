@@ -487,7 +487,7 @@ public class OpenGoodsMarketClient {
 		public void handleGenericClientReplyMessage(GenericClientReply gcr, Host from, short sourceProto, int channelID ) {
 			if(this.pending.containsKey(gcr.getrID())) {
 				long time = System.currentTimeMillis();
-				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.remove(gcr.getrID())));
+				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
 			} //Else nothing to be done
 		}
 		

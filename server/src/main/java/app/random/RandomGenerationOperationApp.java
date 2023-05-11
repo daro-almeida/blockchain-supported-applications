@@ -1,26 +1,20 @@
-package app;
-
-import java.io.IOException;
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.security.GeneralSecurityException;
-import java.security.PrivateKey;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.Properties;
-import java.util.Random;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+package app.random;
 
 import blockchain.BlockChainProtocol;
 import consensus.PBFTProtocol;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.exceptions.InvalidParameterException;
 import pt.unl.fct.di.novasys.babel.exceptions.ProtocolAlreadyExistsException;
+import utils.Utils;
+
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.util.Arrays;
+import java.util.Properties;
+import java.util.Random;
 
 public class RandomGenerationOperationApp {
 
@@ -28,17 +22,15 @@ public class RandomGenerationOperationApp {
 
     private static final short operation_size = 4096;
     
-    private Random r;
-    
-    private PrivateKey key;
-    
+    private final Random r;
+
     public static void main(String[] args) throws InvalidParameterException, IOException,
             HandlerRegistrationException, ProtocolAlreadyExistsException, GeneralSecurityException {
         Properties props =
                 Babel.loadConfig(Arrays.copyOfRange(args, 0, args.length), "config.properties");
         logger.debug(props);
         if (props.containsKey("interface")) {
-            String address = getAddress(props.getProperty("interface"));
+            String address = Utils.getAddress(props.getProperty("interface"));
             if (address == null) return;
          }
         new RandomGenerationOperationApp(props);
@@ -67,46 +59,24 @@ public class RandomGenerationOperationApp {
 
         try { Thread.sleep(2 * 1000); } catch (InterruptedException e1) { }
 
-        Thread t = new Thread(new Runnable() {
+        Thread t = new Thread(() -> {
+            while(true) {
+                try {
+                    logger.trace("Generating random request.");
 
-            @Override
-            public void run() {
-                while(true) {
-                    try {
-                        logger.trace("Generating random request.");
+                    byte[] block = new byte[RandomGenerationOperationApp.operation_size];
+                    r.nextBytes(block);
 
-                        byte[] block = new byte[RandomGenerationOperationApp.operation_size];
-                        r.nextBytes(block);
+                    bc.submitClientOperation(block);
 
-                        bc.submitClientOperation(block);
-
-                        Thread.sleep(1 * 1000);
-                    } catch (InterruptedException e) {
-                        //nothing to be done here
-                    } //Wait 5 seconds
-                }
+                    Thread.sleep(1 * 1000);
+                } catch (InterruptedException e) {
+                    //nothing to be done here
+                } //Wait 5 seconds
             }
         });
         t.start();
 
         logger.info("Request generation thread is running.");
     }
-
-    private static String getAddress(String inter) throws SocketException {
-        NetworkInterface byName = NetworkInterface.getByName(inter);
-        if (byName == null) {
-            logger.error("No interface named " + inter);
-            return null;
-        }
-        Enumeration<InetAddress> addresses = byName.getInetAddresses();
-        InetAddress currentAddress;
-        while (addresses.hasMoreElements()) {
-            currentAddress = addresses.nextElement();
-            if (currentAddress instanceof Inet4Address)
-                return currentAddress.getHostAddress();
-        }
-        logger.error("No ipv4 found for interface " + inter);
-        return null;
-    }
-
 }

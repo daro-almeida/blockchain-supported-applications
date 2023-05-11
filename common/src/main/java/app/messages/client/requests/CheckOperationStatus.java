@@ -11,7 +11,7 @@ public class CheckOperationStatus extends ProtoMessage {
 	
 	public final static short MESSAGE_ID = 307;
 	
-	private UUID rID;
+	private final UUID rID;
 
 	
 	public CheckOperationStatus(UUID rID) {
@@ -23,11 +23,6 @@ public class CheckOperationStatus extends ProtoMessage {
 	public UUID getrID() {
 		return rID;
 	}
-
-	public void setrID(UUID rID) {
-		this.rID = rID;
-	}
-
 
 	public static ISerializer<CheckOperationStatus> serializer = new ISerializer<CheckOperationStatus>() {
 
