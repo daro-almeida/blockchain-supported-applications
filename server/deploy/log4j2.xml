@@ -17,9 +17,9 @@
         <Logger level="info" name="pt.unl.fct.di.novasys.channel"/>
         <Logger level="info" name="pt.unl.fct.di.novasys.babel"/>
 
-        <Root level="trace">
-            <AppenderRef ref="Console" level="info"/>
-            <AppenderRef ref="MyFile" level="trace"/>
+        <Root level="warn">
+            <AppenderRef ref="Console" level="warn"/>
+            <AppenderRef ref="MyFile" level="warn"/>
         </Root>
     </Loggers>
 </Configuration>

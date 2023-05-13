@@ -1,4 +1,4 @@
-package app.metrics;
+package metrics;
 
 import com.google.gson.Gson;
 

@@ -37,11 +37,7 @@
 			<artifactId>jackson-core-asl</artifactId>
 			<version>1.9.7</version>
 		</dependency>
-		<dependency>
-   		 	<groupId>org.hdrhistogram</groupId>
-    		<artifactId>HdrHistogram</artifactId>
-    		<version>2.1.12</version>
-		</dependency>
+
         <dependency>
             <groupId>pt.unl.fct.di.novasys</groupId>
             <artifactId>common</artifactId>
@@ -70,7 +66,7 @@
                 <configuration>
                     <transformers>
                         <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                            <mainClass>app.opengoods.OpenGoodsMarket</mainClass>
+                            <mainClass>app.open_goods.OpenGoodsMarket</mainClass>
                             <manifestEntries>
                                 <Multi-Release>true</Multi-Release>
                             </manifestEntries>

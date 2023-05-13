@@ -69,7 +69,7 @@ public class RandomGenerationOperationApp {
 
                     bc.submitClientOperation(block);
 
-                    Thread.sleep(1 * 1000);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
                     //nothing to be done here
                 } //Wait 5 seconds

@@ -1,4 +1,4 @@
-package app.opengoods;
+package app.open_goods;
 
 import java.security.PublicKey;
 import java.util.HashMap;

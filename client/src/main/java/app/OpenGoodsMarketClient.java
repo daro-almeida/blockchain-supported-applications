@@ -1,9 +1,7 @@
 package app;
 
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -26,7 +24,8 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import app.metrics.Metrics;
+import app.messages.WriteOperation;
+import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -130,27 +129,9 @@ public class OpenGoodsMarketClient {
 		}
 
 		Metrics.initMetrics(props);
-        
-        OpenGoodsMarketClient opm = new OpenGoodsMarketClient(props);
-        opm.stats();
-        
+
+		new OpenGoodsMarketClient(props);
     }
-
-    private long wallclock = 0;
-    
-    private void stats() {
-    	
-		while(true) {
-			try { Thread.sleep(this.report_period); } catch (Exception e) {} //Every 20 seconds
-
-			long pendingOps = 0L;
-			for(ClientInstance ci: clients) {
-				pendingOps += ci.pending.size();
-			}
-
-			Metrics.writeMetric("pending_ops", "number", Long.toString(pendingOps));
-		}
-	}
 
 	public OpenGoodsMarketClient(Properties props) throws IOException, ProtocolAlreadyExistsException,
             HandlerRegistrationException, GeneralSecurityException {
@@ -202,7 +183,7 @@ public class OpenGoodsMarketClient {
     		 String[] e = s.split(":");
     		 hosts.add(new Host(InetAddress.getByName(e[0]), Short.parseShort(e[1])));
     	 }
-    	 this.servers = hosts.toArray(new Host[hosts.size()]);
+    	 this.servers = hosts.toArray(new Host[0]);
     	 
     	 this.wallets = new ConcurrentHashMap<PublicKey, Float>();
     	 
@@ -258,6 +239,8 @@ public class OpenGoodsMarketClient {
     	private ArrayList<PublicKey> clients;
     	
     	private EventLoopGroup nm;
+
+		private HashMap<UUID,Long> pending;
     	
     	public ExchangeClient(short port, char[] password, EventLoopGroup nm, Babel b) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
     		super(OpenGoodsMarketClient.PROTO_NAME, (short) (OpenGoodsMarketClient.PROTO_ID));
@@ -274,6 +257,8 @@ public class OpenGoodsMarketClient {
 			r = new Random(System.currentTimeMillis());
 			
 			this.clients = new ArrayList<>();
+
+			this.pending = new HashMap<>();
     	}
 
 		@Override
@@ -287,17 +272,18 @@ public class OpenGoodsMarketClient {
 	    		clientProps2.put(SimpleClientChannel.ADDRESS_KEY, servers[i].getAddress().getHostAddress());
 	    		clientProps2.put(SimpleClientChannel.PORT_KEY, String.valueOf(servers[i].getPort()));
 	    		clientChannel[i] = createChannel(SimpleClientChannel.NAME, clientProps2);
-		    	
+
 		    	registerMessageSerializer(clientChannel[i], CheckOperationStatus.MESSAGE_ID, CheckOperationStatus.serializer);
-		    	
-		    	registerMessageSerializer(clientChannel[i], Deposit.MESSAGE_ID, Deposit.serializer);
-		    	registerMessageSerializer(clientChannel[i], Withdrawal.MESSAGE_ID, Withdrawal.serializer);
-		    	
+
+		    	registerMessageSerializer(clientChannel[i], Deposit.MESSAGE_ID, WriteOperation.serializer);
+		    	registerMessageSerializer(clientChannel[i], Withdrawal.MESSAGE_ID, WriteOperation.serializer);
+
 		    	registerMessageSerializer(clientChannel[i], OperationStatusReply.MESSAGE_ID, OperationStatusReply.serializer);
 		    	registerMessageSerializer(clientChannel[i], GenericClientReply.MESSAGE_ID, GenericClientReply.serializer);
-		    	
+
 		    	registerMessageHandler(clientChannel[i], GenericClientReply.MESSAGE_ID, this::handleGenericClientReplyMessage);
-		    	
+				registerMessageHandler(clientChannel[i], OperationStatusReply.MESSAGE_ID, this::handleOperationStatusReplyMessage);
+
 		    	registerChannelEventHandler(clientChannel[i], ServerDownEvent.EVENT_ID, this::uponServerDown);
 		    	registerChannelEventHandler(clientChannel[i], ServerUpEvent.EVENT_ID, this::uponServerUp);
 		    	registerChannelEventHandler(clientChannel[i], ServerFailedEvent.EVENT_ID, this::uponServerFailed);
@@ -326,10 +312,10 @@ public class OpenGoodsMarketClient {
 			
 				Deposit d = new Deposit(client, 2000);
 				d.signMessage(key);
-				
+
 				sendMessage(clientChannel[lastServerUsed], d, application_proto_number, servers[this.lastServerUsed], 0);
-				//System.err.println("Deposited to " + client.toString());
-				
+				pending.put(d.getRid(), System.currentTimeMillis());
+
 				lastServerUsed++;
 				if(lastServerUsed == servers.length)
 					lastServerUsed = 0;
@@ -337,9 +323,38 @@ public class OpenGoodsMarketClient {
 			
 			setupPeriodicTimer(new NextOperation(), 5*1000, 5*1000);
 		}
-		
+
+		public void handleOperationStatusReplyMessage(OperationStatusReply osr, Host from, short sourceProto, int channelID ) {
+			if(this.pending.containsKey(osr.getrID())) {
+				long time = System.currentTimeMillis();
+				switch(osr.getStatus()) {
+					case REJECTED:
+						Metrics.writeMetric("operation_rejected", "latency", Long.toString(time - pending.remove(osr.getrID())));
+						break;
+					case FAILED:
+						Metrics.writeMetric("operation_failed", "latency", Long.toString(time - pending.remove(osr.getrID())));
+						break;
+					case EXECUTED:
+						Metrics.writeMetric("operation_executed", "latency", Long.toString(time - pending.remove(osr.getrID())));
+						break;
+					case CANCELLED:
+						//Should never happen
+						break;
+					case PENDING:
+					case UNKNOWN:
+					default:
+						setupTimer(new NextCheck(osr.getrID()), operation_refresh_timer);
+						break;
+
+				}
+			} //Else nothing to be done
+		}
+
 		public void handleGenericClientReplyMessage(GenericClientReply gcr, Host from, short sourceProto, int channelID ) {
-			//Nothing to be done
+			if(this.pending.containsKey(gcr.getrID())) {
+				long time = System.currentTimeMillis();
+				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
+			} //Else nothing to be done
 		}
 		
 		public void handleNextOperationTimer(NextOperation no, long delay) {
@@ -354,6 +369,7 @@ public class OpenGoodsMarketClient {
 				d.signMessage(key);
 				
 				sendMessage(clientChannel[lastServerUsed], d, application_proto_number, servers[this.lastServerUsed], 0);
+				pending.put(d.getRid(), System.currentTimeMillis());
 				lastServerUsed++;
 				if(lastServerUsed == servers.length)
 					lastServerUsed = 0;
@@ -419,9 +435,9 @@ public class OpenGoodsMarketClient {
 	    		clientProps2.put(SimpleClientChannel.PORT_KEY, String.valueOf(servers[i].getPort()));
 				clientChannel[i] = createChannel(SimpleClientChannel.NAME, clientProps2);
 		    	
-		    	registerMessageSerializer(clientChannel[i], IssueOffer.MESSAGE_ID, IssueOffer.serializer);
-		    	registerMessageSerializer(clientChannel[i], IssueWant.MESSAGE_ID, IssueWant.serializer);
-		    	registerMessageSerializer(clientChannel[i], Cancel.MESSAGE_ID, Cancel.serializer);
+		    	registerMessageSerializer(clientChannel[i], IssueOffer.MESSAGE_ID, WriteOperation.serializer);
+		    	registerMessageSerializer(clientChannel[i], IssueWant.MESSAGE_ID, WriteOperation.serializer);
+		    	registerMessageSerializer(clientChannel[i], Cancel.MESSAGE_ID, WriteOperation.serializer);
 		    	registerMessageSerializer(clientChannel[i], CheckOperationStatus.MESSAGE_ID, CheckOperationStatus.serializer);
 		    		
 		    	registerMessageSerializer(clientChannel[i], OperationStatusReply.MESSAGE_ID, OperationStatusReply.serializer);

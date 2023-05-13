@@ -1,4 +1,4 @@
-package app.opengoods;
+package app.open_goods;
 
 import app.messages.WriteOperation;
 import app.messages.client.replies.GenericClientReply;
@@ -14,6 +14,7 @@ import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import blockchain.requests.ClientRequest;
 import consensus.PBFTProtocol;
+import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
@@ -31,7 +32,9 @@ import utils.Utils;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.security.cert.CertificateException;
 import java.util.*;
 
 public class OpenGoodsMarket extends GenericProtocol {
@@ -52,7 +55,7 @@ public class OpenGoodsMarket extends GenericProtocol {
     // key = target request ID
     private final Map<UUID, Cancel> unmatchedCancels = new HashMap<>();
     // to send reply later
-    private final Map<UUID, Host> reqDestinations = new HashMap<>();
+    private final Map<UUID, Destination> reqDestinations = new HashMap<>();
 
     private final CSDWallets csdWallets = new CSDWallets();
 
@@ -76,6 +79,8 @@ public class OpenGoodsMarket extends GenericProtocol {
             props.put(ADDRESS_KEY, address);
         }
 
+        Metrics.initMetrics(props);
+
         Babel babel = Babel.getInstance();
 
         OpenGoodsMarket opm = new OpenGoodsMarket(props);
@@ -95,9 +100,9 @@ public class OpenGoodsMarket extends GenericProtocol {
         logger.info("System is running...");
     }
 
-    public OpenGoodsMarket(Properties props) throws KeyStoreException {
+    public OpenGoodsMarket(Properties props) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
         super(OpenGoodsMarket.PROTO_NAME, OpenGoodsMarket.PROTO_ID);
-        this.exchangeKey = Crypto.getTruststore().getCertificate("exchange").getPublicKey();
+        this.exchangeKey = Crypto.getTruststore(props).getCertificate("exchange").getPublicKey();
     }
 
     @Override
@@ -108,14 +113,13 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         clientChannel = createChannel(SimpleServerChannel.NAME, serverProps);
 
-        registerMessageSerializer(clientChannel, IssueOffer.MESSAGE_ID, IssueOffer.serializer);
-        registerMessageSerializer(clientChannel, IssueWant.MESSAGE_ID, IssueWant.serializer);
-        registerMessageSerializer(clientChannel, Cancel.MESSAGE_ID, Cancel.serializer);
+        registerMessageSerializer(clientChannel, IssueOffer.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, IssueWant.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, Cancel.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, Deposit.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, Withdrawal.MESSAGE_ID, WriteOperation.serializer);
+
         registerMessageSerializer(clientChannel, CheckOperationStatus.MESSAGE_ID, CheckOperationStatus.serializer);
-
-        registerMessageSerializer(clientChannel, Deposit.MESSAGE_ID, Deposit.serializer);
-        registerMessageSerializer(clientChannel, Withdrawal.MESSAGE_ID, Withdrawal.serializer);
-
         registerMessageSerializer(clientChannel, OperationStatusReply.MESSAGE_ID, OperationStatusReply.serializer);
         registerMessageSerializer(clientChannel, GenericClientReply.MESSAGE_ID, GenericClientReply.serializer);
 
@@ -123,7 +127,6 @@ public class OpenGoodsMarket extends GenericProtocol {
         registerMessageHandler(clientChannel, IssueWant.MESSAGE_ID, this::handleIssueWantMessage);
         registerMessageHandler(clientChannel, Cancel.MESSAGE_ID, this::handleCancelMessage);
         registerMessageHandler(clientChannel, CheckOperationStatus.MESSAGE_ID, this::handleCheckOperationStatusMessage);
-
         registerMessageHandler(clientChannel, Deposit.MESSAGE_ID, this::handleDepositMessage);
         registerMessageHandler(clientChannel, Withdrawal.MESSAGE_ID, this::handleWithdrawalMessage);
 
@@ -138,35 +141,38 @@ public class OpenGoodsMarket extends GenericProtocol {
      */
 
     public void handleIssueOfferMessage(IssueOffer io, Host from, short sourceProto, int channelID) {
-        logger.info("Received IssueOffer (" + io.getRid() + " from " + from + "(client" + io.getcID() + ")");
+        logger.debug("Received IssueOffer ({} from client {})", io.getRid(), from);
 
-        if (!validateIssueOffer(io, from) || !authenticatedOperation(io, io.getRid(), io.getcID(), from))
+        var dest = new Destination(from, sourceProto);
+        if (!validateIssueOffer(io, dest) || !authenticatedOperation(io, io.getRid(), io.getcID(), dest))
             return;
 
-        submitOperation(io.getRid(), io.getBytes(), io.getSignature(), io.getcID(), from);
+        submitOperation(io.getRid(), io.getBytes(), io.getSignature(), io.getcID(), dest);
     }
 
     public void handleIssueWantMessage(IssueWant iw, Host from, short sourceProto, int channelID) {
-        logger.info("Received IssueWant (" + iw.getRid() + " from " + from + "(client" + iw.getcID() + ")");
+        logger.debug("Received IssueWant ({} from client {})", iw.getRid(), from);
 
-        if (!validateIssueWant(iw, from) || !authenticatedOperation(iw, iw.getRid(), iw.getcID(), from))
+        var dest = new Destination(from, sourceProto);
+        if (!validateIssueWant(iw, dest) || !authenticatedOperation(iw, iw.getRid(), iw.getcID(), dest))
             return;
 
-        submitOperation(iw.getRid(), iw.getBytes(), iw.getSignature(), iw.getcID(), from);
+        submitOperation(iw.getRid(), iw.getBytes(), iw.getSignature(), iw.getcID(), dest);
     }
 
     public void handleCancelMessage(Cancel c, Host from, short sourceProto, int channelID) {
-        logger.info("Received Cancel for operation " + c.getrID() + " from " + from);
+        logger.debug("Received Cancel ({} from client {})", c.getrID(), from);
 
-        if (!validateCancel(c, from) || !authenticatedOperation(c, c.getrID(), c.getcID(), from))
+        var dest = new Destination(from, sourceProto);
+        if (!validateCancel(c, dest) || !authenticatedOperation(c, c.getrID(), c.getcID(), dest))
             return;
 
-        submitOperation(c.getrID(), c.getBytes(), c.getSignature(), c.getcID(), from);
+        submitOperation(c.getrID(), c.getBytes(), c.getSignature(), c.getcID(), dest);
     }
 
     public void handleCheckOperationStatusMessage(CheckOperationStatus cos, Host from, short sourceProto,
             int channelID) {
-        logger.info("Received CheckOperation for operation " + cos.getrID() + " from " + from);
+        logger.debug("Received CheckOperationStatus ({} from client {})", cos.getrID(), from);
 
         OperationStatusReply osr;
 
@@ -189,29 +195,23 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     public void handleDepositMessage(Deposit d, Host from, short sourceProto, int channelID) {
-        var clientId = d.getClientID();
-        var amount = d.getAmount();
+        logger.debug("Received deposit of " + d.getAmount() + " from exchange (" + from + ")");
 
-        logger.info("Received deposit of " + amount + " to client" + clientId + " from the Exchange ("
-                + from + ")");
-
-        if (!validateDeposit(d, from) || !authenticatedOperation(d, d.getRid(), exchangeKey, from))
+        var dest = new Destination(from, sourceProto);
+        if (!validateDeposit(d, dest) || !authenticatedOperation(d, d.getRid(), exchangeKey, dest))
             return;
 
-        submitOperation(d.getRid(), d.getBytes(), d.getSignature(), exchangeKey, from);
+        submitOperation(d.getRid(), d.getBytes(), d.getSignature(), exchangeKey, dest);
     }
 
     public void handleWithdrawalMessage(Withdrawal w, Host from, short sourceProto, int channelID) {
-        var clientId = w.getClientID();
-        var amount = w.getAmount();
+        logger.debug("Received withdrawal of " + w.getAmount() + " from exchange (" + from + ")");
 
-        logger.info("Received withdrawal of " + amount + " to client" + clientId + " from the Exchange ("
-                + from + ")");
-
-        if (!validateWithdrawal(w, from) || !authenticatedOperation(w, w.getRid(), exchangeKey, from))
+        var dest = new Destination(from, sourceProto);
+        if (!validateWithdrawal(w, dest) || !authenticatedOperation(w, w.getRid(), exchangeKey, dest))
             return;
 
-        submitOperation(w.getRid(), w.getBytes(), w.getSignature(), exchangeKey, from);
+        submitOperation(w.getRid(), w.getBytes(), w.getSignature(), exchangeKey, dest);
     }
 
     /*
@@ -238,10 +238,13 @@ public class OpenGoodsMarket extends GenericProtocol {
      */
 
     private void handleExecutedIssueOffer(IssueOffer io) {
-        if (preCancelled(io.getRid(), io.getcID()) || validateIssueOffer(io, reqDestinations.get(io.getRid()))) {
+        if (preCancelled(io.getRid(), io.getcID()) || !validateIssueOffer(io, reqDestinations.get(io.getRid()))) {
             reqDestinations.remove(io.getRid());
             return;
         }
+
+        logger.info("Executed IssueOffer for {} units of {}, {}CSD's each: {}",
+                io.getResourceType(), io.getQuantity(), io.getPricePerUnit(), io.getRid());
 
         var offer = new Offer(io.getRid(), io.getcID(), io.getResourceType(), io.getQuantity(), io.getPricePerUnit());
         float offerPrice = offer.getPricePerUnit();
@@ -279,10 +282,13 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     private void handleExecutedIssueWant(IssueWant iw) {
-        if (preCancelled(iw.getRid(), iw.getcID()) || validateIssueWant(iw, reqDestinations.get(iw.getRid()))) {
+        if (preCancelled(iw.getRid(), iw.getcID()) || !validateIssueWant(iw, reqDestinations.get(iw.getRid()))) {
             reqDestinations.remove(iw.getRid());
             return;
         }
+
+        logger.info("Executed IssueWant for {} units of {}, {}CSD's each: {}",
+                iw.getQuantity(), iw.getResourceType(), iw.getPricePerUnit(), iw.getRid());
 
         var want = new Want(iw.getRid(), iw.getcID(), iw.getResourceType(), iw.getQuantity(), iw.getPricePerUnit());
         float wantPrice = want.getPricePerUnit();
@@ -319,10 +325,12 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     private void handleExecutedCancel(Cancel c) {
-        if (validateCancel(c, reqDestinations.get(c.getrID()))) {
+        if (!validateCancel(c, reqDestinations.get(c.getrID()))) {
             reqDestinations.remove(c.getrID());
             return;
         }
+
+        logger.info("Executed Cancel on {}: {}", c.getTargetRequest(), c.getrID());
 
         var iw = standingWants.get(c.getTargetRequest());
         var io = standingOffers.get(c.getTargetRequest());
@@ -330,6 +338,8 @@ public class OpenGoodsMarket extends GenericProtocol {
             unmatchedCancels.put(c.getTargetRequest(), c);
             return;
         }
+
+        logger.info("Operation {} was cancelled", c.getTargetRequest());
 
         if (iw != null) {
             standingWants.remove(c.getTargetRequest());
@@ -344,10 +354,12 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     private void handleExecutedDeposit(Deposit d) {
-        if (validateDeposit(d, reqDestinations.get(d.getRid()))) {
+        if (!validateDeposit(d, reqDestinations.get(d.getRid()))) {
             reqDestinations.remove(d.getRid());
             return;
         }
+
+        logger.info("Executed Deposit of {} CSD's: {}", d.getAmount(), d.getRid());
 
         csdWallets.increaseBalance(d.getClientID(), d.getAmount());
 
@@ -355,38 +367,40 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     private void handleExecutedWithdrawal(Withdrawal w) {
-        if (validateWithdrawal(w, reqDestinations.get(w.getRid()))) {
+        if (!validateWithdrawal(w, reqDestinations.get(w.getRid()))) {
             reqDestinations.remove(w.getRid());
             return;
         }
+
+        logger.info("Executed Withdrawal of {} CSD's: {}", w.getAmount(), w.getRid());
 
         csdWallets.decreaseBalance(w.getClientID(), w.getAmount());
 
         changeAndNotifyStatus(w.getRid(), Status.EXECUTED);
     }
 
-    private boolean authenticatedOperation(WriteOperation op, UUID requestId, PublicKey key, Host from) {
+    private boolean authenticatedOperation(WriteOperation op, UUID requestId, PublicKey key, Destination dest) {
         if (!Crypto.checkSignature(op, key)) {
-            logger.warn("Invalid signature in operation from client {}", from);
+            logger.warn("Invalid signature in operation from client {}", dest.host());
             opStatus.put(requestId, Status.REJECTED);
-            sendStatus(requestId, Status.REJECTED, from);
+            sendStatus(requestId, Status.REJECTED, dest);
             return false;
         }
         return true;
     }
 
-    private boolean repeatedOperation(UUID requestId, Host from) {
+    private boolean repeatedOperation(UUID requestId, Destination dest) {
         if (opStatus.containsKey(requestId) && opStatus.get(requestId) != OperationStatusReply.Status.PENDING) {
             logger.warn("Repeated operation {}", requestId);
             opStatus.put(requestId, Status.FAILED);
-            sendStatus(requestId, Status.FAILED, from);
+            sendStatus(requestId, Status.FAILED, dest);
             return true;
         }
         return false;
     }
 
-    private boolean validateIssueOffer(IssueOffer io, Host from) {
-        if (repeatedOperation(io.getRid(), from))
+    private boolean validateIssueOffer(IssueOffer io, Destination dest) {
+        if (repeatedOperation(io.getRid(), dest))
             return false;
 
         boolean failed = false;
@@ -400,15 +414,15 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         if (failed) {
             opStatus.put(io.getRid(), OperationStatusReply.Status.FAILED);
-            sendStatus(io.getRid(), OperationStatusReply.Status.FAILED, from);
+            sendStatus(io.getRid(), OperationStatusReply.Status.FAILED, dest);
             return false;
         }
 
         return true;
     }
 
-    private boolean validateIssueWant(IssueWant iw, Host from) {
-        if (repeatedOperation(iw.getRid(), from))
+    private boolean validateIssueWant(IssueWant iw, Destination dest) {
+        if (repeatedOperation(iw.getRid(), dest))
             return false;
 
         boolean failed = false;
@@ -422,15 +436,15 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         if (failed) {
             opStatus.put(iw.getRid(), OperationStatusReply.Status.FAILED);
-            sendStatus(iw.getRid(), OperationStatusReply.Status.FAILED, from);
+            sendStatus(iw.getRid(), OperationStatusReply.Status.FAILED, dest);
             return false;
         }
 
         return true;
     }
 
-    private boolean validateCancel(Cancel c, Host from) {
-        if (repeatedOperation(c.getrID(), from))
+    private boolean validateCancel(Cancel c, Destination dest) {
+        if (repeatedOperation(c.getrID(), dest))
             return false;
 
         boolean failed = false;
@@ -447,51 +461,51 @@ public class OpenGoodsMarket extends GenericProtocol {
         }
         if (failed) {
             opStatus.put(c.getrID(), OperationStatusReply.Status.FAILED);
-            sendStatus(c.getrID(), OperationStatusReply.Status.FAILED, from);
+            sendStatus(c.getrID(), OperationStatusReply.Status.FAILED, dest);
             return false;
         }
 
         boolean rejected = false;
         if ((standingOffers.containsKey(c.getTargetRequest()) && !standingOffers.get(c.getTargetRequest()).getcID().equals(c.getcID())) ||
                 (standingWants.containsKey(c.getTargetRequest()) && !standingWants.get(c.getTargetRequest()).getcID().equals(c.getcID()))) {
-            logger.warn("Cancel: Target request {} does not belong to client {}", c.getTargetRequest(), from);
+            logger.warn("Cancel: Target request {} does not belong to client {}", c.getTargetRequest(), dest.host());
             rejected = true;
         }
         if (rejected) {
             opStatus.put(c.getrID(), OperationStatusReply.Status.REJECTED);
-            sendStatus(c.getrID(), OperationStatusReply.Status.REJECTED, from);
+            sendStatus(c.getrID(), OperationStatusReply.Status.REJECTED, dest);
             return false;
         }
 
         return true;
     }
 
-    private boolean validateDeposit(Deposit d, Host from) {
-        if (repeatedOperation(d.getRid(), from))
+    private boolean validateDeposit(Deposit d, Destination dest) {
+        if (repeatedOperation(d.getRid(), dest))
             return false;
 
         boolean failed = false;
         if (d.getAmount() <= 0) {
-            logger.warn("Deposit: Invalid amount in {} from client {}", d.getRid(), from);
+            logger.warn("Deposit: Invalid amount in {} from client {}", d.getRid(), dest.host());
             failed = true;
         }
 
         if (failed) {
             opStatus.put(d.getRid(), OperationStatusReply.Status.FAILED);
-            sendStatus(d.getRid(), OperationStatusReply.Status.FAILED, from);
+            sendStatus(d.getRid(), OperationStatusReply.Status.FAILED, dest);
             return false;
         }
 
         return true;
     }
 
-    private boolean validateWithdrawal(Withdrawal w, Host from) {
-        if (repeatedOperation(w.getRid(), from))
+    private boolean validateWithdrawal(Withdrawal w, Destination dest) {
+        if (repeatedOperation(w.getRid(), dest))
             return false;
 
         boolean failed = false;
         if (w.getAmount() <= 0) {
-            logger.warn("Withdrawal: Invalid amount in {} from client {}", w.getRid(), from);
+            logger.warn("Withdrawal: Invalid amount in {} from client {}", w.getRid(), dest.host());
             failed = true;
         } else if (!csdWallets.canAfford(w.getClientID(), w.getAmount())) {
             logger.warn("Withdrawal: Client {} has insufficient funds", w.getClientID());
@@ -500,20 +514,20 @@ public class OpenGoodsMarket extends GenericProtocol {
 
         if (failed) {
             opStatus.put(w.getRid(), OperationStatusReply.Status.FAILED);
-            sendStatus(w.getRid(), OperationStatusReply.Status.FAILED, from);
+            sendStatus(w.getRid(), OperationStatusReply.Status.FAILED, dest);
             return false;
         }
 
         return true;
     }
 
-    private void submitOperation(UUID requestId, byte[] opBytes, byte[] signature, PublicKey clientId, Host from) {
+    private void submitOperation(UUID requestId, byte[] opBytes, byte[] signature, PublicKey clientId, Destination dest) {
         var req = new ClientRequest(requestId, opBytes, signature, clientId);
         sendRequest(req, BlockChainProtocol.PROTO_ID);
         opStatus.put(requestId, Status.PENDING);
-        reqDestinations.put(requestId, from);
+        reqDestinations.put(requestId, dest);
 
-        sendAck(requestId, from);
+        sendAck(requestId, reqDestinations.get(requestId));
     }
 
     private boolean preCancelled(UUID requestId, PublicKey clientId) {
@@ -521,6 +535,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         var cancel = unmatchedCancels.get(requestId);
         if (cancel != null) {
             if (cancel.getcID().equals(clientId)) {
+                logger.info("Operation {} was cancelled.", requestId);
                 opStatus.put(requestId, Status.CANCELLED);
                 if (reqDestinations.containsKey(requestId)) {
                     sendStatus(requestId, Status.CANCELLED, reqDestinations.get(requestId));
@@ -544,6 +559,9 @@ public class OpenGoodsMarket extends GenericProtocol {
         if (buyAmount == 0)
             return false;
 
+        logger.info("Matched Offer {} with Want {} for {} units of {}",
+                offer.getRequestId(), want.getRequestId(), buyAmount, offer.getResourceType());
+
         offer.decreaseStock(buyAmount);
         want.decreaseQuantity(buyAmount);
         csdWallets.increaseBalance(offer.getClientId(), buyAmount * offerPrice);
@@ -551,9 +569,10 @@ public class OpenGoodsMarket extends GenericProtocol {
         return true;
     }
 
-    private void sendAck(UUID requestId, Host from) {
+    private void sendAck(UUID requestId, Destination dest) {
+        assert dest != null;
         GenericClientReply ack = new GenericClientReply(requestId);
-        sendMessage(ack, from);
+        sendMessage(clientChannel, ack, dest.sourceProto(), dest.host(), 0);
     }
 
     private void changeAndNotifyStatus(UUID requestId, Status status) {
@@ -564,11 +583,11 @@ public class OpenGoodsMarket extends GenericProtocol {
             reqDestinations.remove(requestId);
         }
     }
-    private void sendStatus(UUID requestId, Status status, Host from) {
-        if (from == null)
+    private void sendStatus(UUID requestId, Status status, Destination dest) {
+        if (dest == null)
             return;
         OperationStatusReply statusReply = new OperationStatusReply(requestId, status);
-        sendMessage(statusReply, from);
+        sendMessage(clientChannel, statusReply, dest.sourceProto(), dest.host(), 0);
     }
 
     /*

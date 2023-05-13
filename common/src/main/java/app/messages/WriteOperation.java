@@ -15,7 +15,9 @@ import java.io.IOException;
 public abstract class WriteOperation extends SignedProtoMessage {
 
     public enum OperationType {
-        ISSUE_WANT, ISSUE_OFFER, CANCEL, DEPOSIT, WITHDRAWAL
+        ISSUE_WANT, ISSUE_OFFER, CANCEL, DEPOSIT, WITHDRAWAL;
+        private static final OperationType[] values = values();
+        public static OperationType get(int ordinal) { return values[ordinal]; }
     }
 
     private final OperationType type;
@@ -30,18 +32,13 @@ public abstract class WriteOperation extends SignedProtoMessage {
     }
 
     public final byte[] getBytes() {
-        var byteBuf = Unpooled.buffer();
-        try {
-            serializer.serializeBody(this, byteBuf);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return byteBuf.array();
+        return this.serializedMessage;
     }
 
-    public static WriteOperation fromBytes(byte [] opBytes) {
+    public static WriteOperation fromBytes(byte[] opBytes) {
         var byteBuf = Unpooled.wrappedBuffer(opBytes);
         try {
+            byteBuf.skipBytes(2); // skip message id
             return serializer.deserializeBody(byteBuf);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -60,7 +57,7 @@ public abstract class WriteOperation extends SignedProtoMessage {
     public final static SignedMessageSerializer<WriteOperation> serializer = new SignedMessageSerializer<>() {
         @Override
         public void serializeBody(WriteOperation op, ByteBuf out) throws IOException {
-            out.writeShort((short) op.getType().ordinal());
+            out.writeByte(op.getType().ordinal());
             switch (op.getType()) {
                 case ISSUE_WANT -> IssueWant.serializer.serialize((IssueWant) op, out);
                 case ISSUE_OFFER -> IssueOffer.serializer.serialize((IssueOffer) op, out);
@@ -72,7 +69,7 @@ public abstract class WriteOperation extends SignedProtoMessage {
 
         @Override
         public WriteOperation deserializeBody(ByteBuf in) throws IOException {
-            OperationType type = OperationType.values()[in.readShort()];
+            OperationType type = OperationType.get(in.readByte());
             return switch (type) {
                 case ISSUE_WANT -> IssueWant.serializer.deserialize(in);
                 case ISSUE_OFFER -> IssueOffer.serializer.deserialize(in);

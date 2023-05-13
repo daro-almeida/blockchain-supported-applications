@@ -62,8 +62,8 @@ public class ViewChangeMessage extends SignedProtoMessage {
     }
 
     public boolean isValid(int f, Map<Integer, PublicKey> publicKeys) {
-        return lastExecuted == committedProof.getSeq() &&
-                committedProof.isValid(f, publicKeys) &&
+        return ((lastExecuted == 0 && committedProof == null) ||
+                (lastExecuted == committedProof.getSeq() && committedProof.isValid(f, publicKeys))) &&
                 preparedProofsValid(f, publicKeys);
     }
 

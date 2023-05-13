@@ -2,6 +2,7 @@ package blockchain;
 
 import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.PrivateKey;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Block {
@@ -81,7 +83,7 @@ public class Block {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        return bytebuf.array();
+        return ByteBufUtil.getBytes(bytebuf);
     }
 
     public static Block deserialize(byte[] block) {
@@ -103,6 +105,19 @@ public class Block {
 
     public void setSignature(byte[] signature) {
         this.signature = signature;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Block block = (Block) o;
+        return Arrays.equals(hash, block.hash);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(hash);
     }
 
     public static ISerializer<Block> serializer = new ISerializer<>() {

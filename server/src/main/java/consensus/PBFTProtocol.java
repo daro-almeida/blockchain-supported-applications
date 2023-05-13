@@ -180,8 +180,14 @@ public class PBFTProtocol extends GenericProtocol {
 
         int newViewNumber = viewChangeManager.newViewNumber();
 
-        var committedProof = new CommittedProof(prePreparesLog.get(nextToExecute - 1).nullRequestPrePrepare(),
-                preparesLog.get(nextToExecute - 1), commitsLog.get(nextToExecute - 1));
+        CommittedProof committedProof;
+        var prePrepare = prePreparesLog.get(nextToExecute - 1);
+        if (prePrepare == null) {
+            committedProof = null;
+        } else {
+            committedProof = new CommittedProof(prePreparesLog.get(nextToExecute - 1).nullRequestPrePrepare(),
+                    preparesLog.get(nextToExecute - 1), commitsLog.get(nextToExecute - 1));
+        }
 
         var viewChangeMessage = new ViewChangeMessage(newViewNumber, nextToExecute - 1, committedProof,
                 calculatePreparedProofs(), self.id());
@@ -598,15 +604,15 @@ public class PBFTProtocol extends GenericProtocol {
 
     private boolean validateViewChange(ViewChangeMessage msg) {
         if (msg.getNewViewNumber() <= view.getViewNumber()) {
-            logger.warn("ViewChangeMessage: Invalid view number: " + msg.getNewViewNumber() + " <= " + view.getViewNumber());
+            logger.warn("ViewChangeMessage: Invalid view number: {} <= {} from node{}", msg.getNewViewNumber(), view.getViewNumber(), msg.getNodeId());
             return false;
         }
         if (!Crypto.checkSignature(msg, view.getNode(msg.getNodeId()).publicKey())) {
-            logger.warn("ViewChangeMessage: Invalid signature: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
+            logger.warn("ViewChangeMessage: Invalid signature: " + msg.getNewViewNumber() + ", node" + msg.getNodeId());
             return false;
         }
         if (!msg.isValid(f, view.publicKeys())) {
-            logger.warn("ViewChangeMessage: Invalid view change: " + msg.getNewViewNumber() + ", " + msg.getNodeId());
+            logger.warn("ViewChangeMessage: Invalid view change: " + msg.getNewViewNumber() + ", node" + msg.getNodeId());
             return false;
         }
         return true;

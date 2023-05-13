@@ -2,6 +2,7 @@ import os
 import subprocess
 import argparse
 import time
+import threading
 
 server_server_base_port = 5000
 client_server_base_port = 6000
@@ -24,6 +25,7 @@ def run_replicas(n: int):
             "-v", f"{cwd}/server/deploy/crypto/node{i}.ks:/usr/local/crypto/node{i}.ks",
             "-v", f"{cwd}/server/deploy/crypto/truststore.ks:/usr/local/crypto/truststore.ks",
             "-v", f"{cwd}/logs:/usr/local/logs/",
+            "-v", f"{cwd}/metrics/results:/usr/local/metrics/results/",
             "-w", "/usr/local/",
             "openjdk:17",
 
@@ -34,7 +36,8 @@ def run_replicas(n: int):
             f"server_server_port={server_server_base_port + i}",
             f"client_server_port={client_server_base_port + i}",
             f"crypto_name=node{i}",
-            "bootstrap_primary_id=1"
+            "bootstrap_primary_id=1",
+            f"metrics_name=node{i}",
         ]
 
         subprocess.Popen(cmd)
@@ -55,22 +58,33 @@ def run_clients(n: int):
         "-v", f"{cwd}/client/deploy/log4j2.xml:/usr/local/log4j2.xml",
         "-v", f"{cwd}/client/deploy/crypto/:/usr/local/crypto/",
         "-v", f"{cwd}/logs:/usr/local/logs/",
-        "-v", f"{cwd}/metrics:/usr/local/metrics/",
+        "-v", f"{cwd}/metrics/results:/usr/local/metrics/results/",
         "-w", "/usr/local/",
         "openjdk:17",
 
         "java", "-ea",
         "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=clients",
         "-jar", "clients.jar",
-        f"clients={n}"
+        f"clients={n}",
+        f"metrics_name=clients",
     ]
     subprocess.Popen(cmd)
+
+
+def wait_for_enter():
+    input("Press Enter to terminate.")
+
+
+def wait_for_time(duration):
+    print(f"Running for {duration}s.")
+    time.sleep(duration)
 
 
 if '__main__' == __name__:
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--replicas", type=int, default=4)
     parser.add_argument("-c", "--clients", type=int, default=5)
+    parser.add_argument("-d", "--duration", type=int, default=0)
 
     args = parser.parse_args()
     num_replicas = args.replicas
@@ -83,6 +97,9 @@ if '__main__' == __name__:
     print(f"Starting {num_clients} clients")
     run_clients(num_clients)
 
-    print("Press Enter to terminate")
-    input()
+    if args.duration <= 0:
+        wait_for_enter()
+    else:
+        wait_for_time(args.duration)
+
     subprocess.run("docker kill $(docker ps -q)", shell=True)

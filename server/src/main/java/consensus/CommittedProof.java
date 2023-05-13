@@ -48,6 +48,12 @@ public class CommittedProof implements Proof {
     public static final ISerializer<CommittedProof> serializer = new ISerializer<>() {
         @Override
         public void serialize(CommittedProof committedProof, ByteBuf byteBuf) throws IOException {
+            if (committedProof == null) {
+                byteBuf.writeBoolean(false);
+                return;
+            }
+            else
+                byteBuf.writeBoolean(true);
             PrePrepareMessage.serializer.serialize(committedProof.prePrepare, byteBuf);
             byteBuf.writeInt(committedProof.prepares.size());
             for (PrepareMessage p : committedProof.prepares)
@@ -59,6 +65,7 @@ public class CommittedProof implements Proof {
 
         @Override
         public CommittedProof deserialize(ByteBuf byteBuf) throws IOException {
+            if (!byteBuf.readBoolean()) return null;
             PrePrepareMessage prePrepare = PrePrepareMessage.serializer.deserialize(byteBuf);
             int preparesSize = byteBuf.readInt();
             Set<PrepareMessage> prepares = new HashSet<>(preparesSize);

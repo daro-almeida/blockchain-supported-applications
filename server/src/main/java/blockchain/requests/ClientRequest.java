@@ -55,13 +55,7 @@ public class ClientRequest extends ProtoRequest {
 	}
 
 	public boolean checkSignature() {
-		ByteBuffer buf = ByteBuffer.allocate(16 + operation.length + publicKey.getEncoded().length);
-		buf.putLong(requestId.getMostSignificantBits());
-		buf.putLong(requestId.getLeastSignificantBits());
-		buf.put(operation);
-		buf.put(publicKey.getEncoded());
-
-		return SignaturesHelper.checkSignature(buf.array(), signature, publicKey);
+		return SignaturesHelper.checkSignature(operation, signature, publicKey);
 	}
 
 	public byte[] toBytes() {

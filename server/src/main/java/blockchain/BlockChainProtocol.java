@@ -146,7 +146,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		logger.debug("Received client request: " + req.getRequestId());
 
-		if (!blockChain.containsOperation(req.getRequestId())) {
+		if (blockChain.containsOperation(req.getRequestId())) {
 			logger.warn("Received repeated request from app: {} ", req.getRequestId());
 			return;
 		}
@@ -160,7 +160,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			var message = new RedirectClientRequestMessage(req, this.self.id());
 			Crypto.signMessage(message, this.key);
 
-			logger.info("Redirecting: " + req.getRequestId());
+			logger.debug("Redirecting: " + req.getRequestId());
 			sendMessage(message, this.view.getPrimary().host());
 
 			pendingRequests.put(req.getRequestId(), new PendingRequest(req, System.currentTimeMillis()));
@@ -230,8 +230,11 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 
 		var block = Block.deserialize(blockBytes);
-		if (!blockChain.validateBlock(block)) {
-			logger.warn("Invalid block seqN=" + notif.getSeqN());
+		try {
+			if (block.getReplicaId() != this.self.id()) // don't validate own block (redundant)
+				blockChain.validateBlock(block);
+		} catch (InvalidBlockException e) {
+			logger.warn("Invalid block, consensusSeqN={}, {}", notif.getSeqN(), e.getMessage());
 
 			if (block.getReplicaId() == view.getPrimary().id()) {
 				logger.warn("Suspecting leader");
@@ -249,8 +252,8 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		block.setSignature(notif.getSignature());
-		blockChain.addBlock(notif.getSeqN(), block);
-		logger.info("Committed block seqN=" + notif.getSeqN());
+		var seqN = blockChain.addBlock(notif.getSeqN(), block);
+		logger.info("Committed block seqN={} consensusSeqN={}", seqN, notif.getSeqN());
 
 		block.getOperations().forEach(req -> {
 			pendingRequests.remove(req.getRequestId());
@@ -377,11 +380,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
-		assert amLeader();
-
-		logger.info("Forcing block creation");
+		logger.debug("Forcing block creation");
 		submitFullBlock(true);
-
 	}
 
 	/*
@@ -466,16 +466,16 @@ public class BlockChainProtocol extends GenericProtocol {
 	 * Create block and fill with ops. When block is full, send to Consensus Protocol.
 	 */
 	private void submitFullBlock(boolean force) {
-		assert blockOps.size() <= maxOps && blockOps.size() > 0;
+		assert blockOps.size() <= maxOps && blockOps.size() > 0 && amLeader();
 
 		//setup timer if it's the first operation we are receiving
-		if (blockOps.size() == 1) {
+		if (blockOps.size() == 1 && !force) {
 			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
 		} else if (blockOps.size() == maxOps || force) {
 			var block = blockChain.newBlock(blockOps, self.id());
 			var signature = block.sign(this.key);
 			var blockBytes = block.serialized();
-
+			logger.info("Proposing block with " + blockOps.size() + " operations");
 			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
 			blockOps = new LinkedList<>();
 
