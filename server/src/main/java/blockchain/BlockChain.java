@@ -108,4 +108,14 @@ public class BlockChain {
     public boolean containsOperation(UUID opId) {
         return operations.contains(opId) || pendingOperations.contains(opId);
     }
+
+    public int size() {
+        return blocks.size();
+    }
+
+    public void resetPendings() {
+        lastPendingBlock = null;
+        nextBlockOps = new LinkedList<>();
+        pendingOperations.clear();
+    }
 }

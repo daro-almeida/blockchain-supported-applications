@@ -2,7 +2,7 @@ import os
 import subprocess
 import argparse
 import time
-import threading
+import json
 
 server_server_base_port = 5000
 client_server_base_port = 6000
@@ -11,8 +11,13 @@ cwd = os.getcwd()
 pause = 10
 
 
-def run_replicas(num: int, ops_block: int):
+def run_replicas(num: int, ops_block: int, ignore_request_block: dict, invalid_block: int, folder: str):
     for i in range(1, num + 1):
+        if str(i) in ignore_request_block:
+            ignore_block = int(ignore_request_block[str(i)])
+        else:
+            ignore_block = -1
+
         cmd = [
             "docker", "run",
             f"--name=open-goods_server{i}",
@@ -39,12 +44,17 @@ def run_replicas(num: int, ops_block: int):
             "bootstrap_primary_id=1",
             f"metrics_name=node{i}",
             f"max_ops_per_block={ops_block}",
+            f"metrics_folder={folder}"
         ]
+        if ignore_block >= 0:
+            cmd.append(f"ignore_request_block={ignore_block}")
+        if invalid_block >= 0 and i == 1:
+            cmd.append(f"invalid_block={invalid_block}")
 
         subprocess.Popen(cmd)
 
 
-def run_clients(num: int, ops_sec: int):
+def run_clients(num: int, ops_sec: int, folder: str):
     if num == 0:
         return
 
@@ -68,7 +78,8 @@ def run_clients(num: int, ops_sec: int):
         "-jar", "clients.jar",
         f"clients={num}",
         "metrics_name=clients",
-        f"ops_sec={ops_sec}"
+        f"ops_sec={ops_sec}",
+        f"metrics_folder={folder}"
     ]
     subprocess.Popen(cmd)
 
@@ -89,15 +100,18 @@ if '__main__' == __name__:
     parser.add_argument("-d", "--duration", type=int, default=0)
     parser.add_argument("-o", "--ops_sec", type=int, default=10)
     parser.add_argument("-b", "--ops_per_block", type=int, default=0)
+    parser.add_argument("-f", "--folder", type=str, default="metrics/results/")
+    parser.add_argument("-ir", "--ignore_request_block", type=json.loads, default={})
+    parser.add_argument("-ib", "--invalid_block", type=int, default=-1)
 
     args = parser.parse_args()
 
     print(f"Starting {args.replicas} replicas")
-    run_replicas(args.replicas, args.ops_per_block)
+    run_replicas(args.replicas, args.ops_per_block, args.ignore_request_block, args.invalid_block, args.folder)
     print(f"Waiting {pause}s to start clients")
     time.sleep(pause)
     print(f"Starting {args.clients} clients + 1 exchange")
-    run_clients(args.clients, args.ops_sec)
+    run_clients(args.clients, args.ops_sec, args.folder)
 
     if args.duration <= 0:
         wait_for_enter()

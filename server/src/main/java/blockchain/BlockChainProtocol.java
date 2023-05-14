@@ -67,6 +67,10 @@ public class BlockChainProtocol extends GenericProtocol {
 	private View view;
 	private int f;
 
+	// test fault parameters
+	private int ignoreRequestBlock;
+	private int invalidBlock;
+
 	public BlockChainProtocol(Properties props) throws NumberFormatException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
 
@@ -78,6 +82,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.noOpTimeout = Long.parseLong(props.getProperty("noop_timeout", "2500"));
 		this.forceBlockTimeout = Long.parseLong(props.getProperty("force_block_timeout", "1000"));
 		this.maxOps = Long.parseLong(props.getProperty("max_ops_per_block", "100"));
+		this.ignoreRequestBlock = Integer.parseInt(props.getProperty("ignore_request_block", "-1"));
+		this.invalidBlock = Integer.parseInt(props.getProperty("invalid_block", "-1"));
+
 		this.blockChain = new BlockChain(maxOps);
 	}
 
@@ -211,6 +218,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		cancelTimer(noOpTimer);
 		cancelTimer(leaderIdleTimer);
 		cancelTimer(forceBlockTimer);
+		blockChain.resetPendings();
 		if (amLeader()) {
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 		} else {
@@ -472,6 +480,10 @@ public class BlockChainProtocol extends GenericProtocol {
 			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
 		} else if (size == maxOps || force) {
 			var block = blockChain.newBlock(self.id());
+
+			if (invalidBlock == blockChain.size())
+				invalidateBlock(block);
+
 			var signature = block.sign(this.key);
 			var blockBytes = block.serialized();
 			logger.info("Proposing block with " + size + " operations");
@@ -480,14 +492,32 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 	}
 
+	private void invalidateBlock(Block block) {
+		block.getOperations().add(block.getOperations().get(0));
+		logger.warn("Invalidating block {} because I am evil", invalidBlock);
+		invalidBlock = -1;
+	}
+
 	private void submitRequest(ClientRequest req) {
 		if (!amLeader())
+			return;
+
+		if (ignoreRequest())
 			return;
 
 		blockChain.addOpToNextBlock(req);
 		submitBlock(false);
 		cancelTimer(noOpTimer);
 		noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
+	}
+
+	private boolean ignoreRequest() {
+		if (blockChain.nextBlockSize() == 0 && blockChain.size() == ignoreRequestBlock) {
+			logger.warn("Ignoring request from block {} because I am evil", ignoreRequestBlock);
+			ignoreRequestBlock = -1;
+			return true;
+		}
+		return false;
 	}
 
 	private boolean amLeader() {
