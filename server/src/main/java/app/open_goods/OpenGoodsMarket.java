@@ -219,9 +219,8 @@ public class OpenGoodsMarket extends GenericProtocol {
      */
 
     private void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
-        if (!(opStatus.get(notif.getRequest().getRequestId()) == Status.PENDING ||
-                opStatus.get(notif.getRequest().getRequestId()) == null))
-            return;
+        assert (opStatus.get(notif.getRequest().getRequestId()) == Status.PENDING ||
+                opStatus.get(notif.getRequest().getRequestId()) == null);
 
         var operation = WriteOperation.fromBytes(notif.getRequest().getOperation());
         switch(operation.getType()) {

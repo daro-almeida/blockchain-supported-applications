@@ -158,6 +158,8 @@ public class PBFTProtocol extends GenericProtocol {
     // --------------------------------------- Request Handlers -----------------------------------
 
     private void uponProposeRequest(ProposeRequest req, short sourceProto) {
+        assert view.getPrimary().equals(self);
+
         logger.trace("Received request: " + Utils.bytesToHex(req.getDigest()));
         var prePrepareMessage = new PrePrepareMessage(view.getViewNumber(), seq, req.getDigest(), req);
         prePreparesLog.put(seq, prePrepareMessage);

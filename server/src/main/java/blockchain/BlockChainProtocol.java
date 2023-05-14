@@ -68,8 +68,9 @@ public class BlockChainProtocol extends GenericProtocol {
 	private int f;
 
 	// test fault parameters
-	private int ignoreRequestBlock;
+	private final int ignoreRequestBlock;
 	private int invalidBlock;
+	private final boolean validateOwnBlocks;
 
 	public BlockChainProtocol(Properties props) throws NumberFormatException {
 		super(BlockChainProtocol.PROTO_NAME, BlockChainProtocol.PROTO_ID);
@@ -84,6 +85,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		this.maxOps = Long.parseLong(props.getProperty("max_ops_per_block", "100"));
 		this.ignoreRequestBlock = Integer.parseInt(props.getProperty("ignore_request_block", "-1"));
 		this.invalidBlock = Integer.parseInt(props.getProperty("invalid_block", "-1"));
+		this.validateOwnBlocks = Boolean.parseBoolean(props.getProperty("validate_own_blocks", "true"));
 
 		this.blockChain = new BlockChain(maxOps);
 	}
@@ -157,7 +159,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		if (amLeader()) {
-			submitRequest(req);
+			submitRequest(req, false);
 		} else {
 			var message = new RedirectClientRequestMessage(req, this.self.id());
 			Crypto.signMessage(message, this.key);
@@ -220,6 +222,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		cancelTimer(forceBlockTimer);
 		blockChain.resetPendings();
 		if (amLeader()) {
+			pendingRequests.clear();
 			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 		} else {
 			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
@@ -234,7 +237,7 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		var block = Block.deserialize(blockBytes);
 		try {
-			if (block.getReplicaId() != this.self.id()) // don't validate own block (redundant)
+			if ((block.getReplicaId() != this.self.id()) || validateOwnBlocks)
 				blockChain.validateBlock(block);
 		} catch (InvalidBlockException e) {
 			logger.warn("Invalid block, consensusSeqN={}, {}", notif.getSeqN(), e.getMessage());
@@ -289,7 +292,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		submitRequest(msg.getRequest());
+		submitRequest(msg.getRequest(), true);
 	}
 
 	private void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender,
@@ -366,6 +369,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleNoOpTimer(NoOpTimer timer, long l) {
+		if (!amLeader())
+			return;
 		var noOpBytes = new byte[0];
 		var signature = SignaturesHelper.generateSignature(noOpBytes, this.key);
 		var propose = new ProposeRequest(noOpBytes, signature);
@@ -498,11 +503,11 @@ public class BlockChainProtocol extends GenericProtocol {
 		invalidBlock = -1;
 	}
 
-	private void submitRequest(ClientRequest req) {
+	private void submitRequest(ClientRequest req, boolean redirected) {
 		if (!amLeader())
 			return;
 
-		if (ignoreRequest())
+		if (ignoreRequest(redirected))
 			return;
 
 		blockChain.addOpToNextBlock(req);
@@ -511,10 +516,9 @@ public class BlockChainProtocol extends GenericProtocol {
 		noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 	}
 
-	private boolean ignoreRequest() {
-		if (blockChain.nextBlockSize() == 0 && blockChain.size() == ignoreRequestBlock) {
+	private boolean ignoreRequest(boolean redirected) {
+		if (blockChain.size() == ignoreRequestBlock && redirected) {
 			logger.warn("Ignoring request from block {} because I am evil", ignoreRequestBlock);
-			ignoreRequestBlock = -1;
 			return true;
 		}
 		return false;

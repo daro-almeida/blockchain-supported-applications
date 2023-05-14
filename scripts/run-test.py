@@ -95,19 +95,18 @@ def wait_for_time(duration):
 
 if '__main__' == __name__:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--replicas", type=int, default=4)
-    parser.add_argument("-c", "--clients", type=int, default=5)
-    parser.add_argument("-d", "--duration", type=int, default=0)
-    parser.add_argument("-o", "--ops_sec", type=int, default=10)
-    parser.add_argument("-b", "--ops_per_block", type=int, default=0)
-    parser.add_argument("-f", "--folder", type=str, default="metrics/results/")
-    parser.add_argument("-ir", "--ignore_request_block", type=json.loads, default={})
-    parser.add_argument("-ib", "--invalid_block", type=int, default=-1)
+    parser.add_argument("-c", "--clients", type=int, default=16, help="Number of clients")
+    parser.add_argument("-d", "--duration", type=int, default=0, help="Duration of the test in seconds, if 0 wait for Enter press")
+    parser.add_argument("-o", "--ops_sec", type=int, default=10, help="Number of operations per second per client")
+    parser.add_argument("-b", "--ops_per_block", type=int, default=0, help="Number of operations per block")
+    parser.add_argument("-f", "--folder", type=str, default="metrics/results/", help="Folder to store metrics")
+    parser.add_argument("-ir", "--ignore_request_block", type=json.loads, default={}, help="JSON map format. Key is replica id, value is block number to ignore requests (as leader) from other replicas. Example: '{\"1\": 10, \"2\": 50}'")
+    parser.add_argument("-ib", "--invalid_block", type=int, default=-1, help="Block number to send invalid block to other replicas (as leader) (only for replica 1)")
 
     args = parser.parse_args()
 
-    print(f"Starting {args.replicas} replicas")
-    run_replicas(args.replicas, args.ops_per_block, args.ignore_request_block, args.invalid_block, args.folder)
+    print(f"Starting 4 replicas")
+    run_replicas(4, args.ops_per_block, args.ignore_request_block, args.invalid_block, args.folder)
     print(f"Waiting {pause}s to start clients")
     time.sleep(pause)
     print(f"Starting {args.clients} clients + 1 exchange")
