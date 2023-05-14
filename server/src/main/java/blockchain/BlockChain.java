@@ -17,7 +17,9 @@ public class BlockChain {
     private final Map<Integer, Block> consensusBlocks = new HashMap<>();
     // blockchain ops Set<UUID>
     private final Set<UUID> operations = new HashSet<>();
+    private final Set<UUID> pendingOperations = new HashSet<>();
     private Block lastPendingBlock = null;
+    private List<ClientRequest> nextBlockOps = new LinkedList<>();
 
     public BlockChain(long maxOpsPerBlock) {
         this.maxOpsPerBlock = maxOpsPerBlock;
@@ -29,12 +31,23 @@ public class BlockChain {
         return consensusBlocks.get(seq);
     }
 
-    public Block newBlock(List<ClientRequest> ops, int replicaId) {
+    public void addOpToNextBlock(ClientRequest req) {
+        nextBlockOps.add(req);
+        pendingOperations.add(req.getRequestId());
+    }
+
+    public int nextBlockSize() {
+        return nextBlockOps.size();
+    }
+
+    public Block newBlock(int replicaId) {
         // get last block contents with new ops
         if (lastPendingBlock != null)
-            lastPendingBlock = new Block(lastPendingBlock.getHash(), ops, replicaId);
+            lastPendingBlock = new Block(lastPendingBlock.getHash(), nextBlockOps, replicaId);
         else
-            lastPendingBlock = new Block(blocks.get(blocks.size() - 1).getHash(), ops, replicaId);
+            lastPendingBlock = new Block(blocks.get(blocks.size() - 1).getHash(), nextBlockOps, replicaId);
+
+        nextBlockOps = new LinkedList<>();
         return lastPendingBlock;
     }
 
@@ -45,12 +58,13 @@ public class BlockChain {
         assert block.getSignature() != null;
 
         Metrics.writeMetric("committed_block", "hash", Utils.bytesToHex(block.getHash()),
-                "seq", String.valueOf(blocks.size()));
+                "seq", String.valueOf(blocks.size()), "num_ops", String.valueOf(block.getOperations().size()));
 
         if (lastPendingBlock != null && lastPendingBlock.equals(block))
             lastPendingBlock = null;
 
         block.getOperations().forEach(req -> operations.add(req.getRequestId()));
+        block.getOperations().forEach(req -> pendingOperations.remove(req.getRequestId()));
 
         consensusBlocks.put(seq, block);
         blocks.put(blocks.size(), block);
@@ -88,10 +102,10 @@ public class BlockChain {
     }
 
     public boolean containsOperation(ClientRequest op) {
-        return operations.contains(op.getRequestId());
+        return containsOperation(op.getRequestId());
     }
 
     public boolean containsOperation(UUID opId) {
-        return operations.contains(opId);
+        return operations.contains(opId) || pendingOperations.contains(opId);
     }
 }

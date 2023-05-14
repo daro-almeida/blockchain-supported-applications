@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import app.messages.WriteOperation;
+import app.timers.NextOperation;
 import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -39,13 +40,13 @@ import app.messages.exchange.requests.Deposit;
 import app.messages.exchange.requests.Withdrawal;
 import app.timers.ExpiredOperation;
 import app.timers.NextCheck;
-import app.timers.NextOperation;
 import io.netty.channel.EventLoopGroup;
 import pt.unl.fct.di.novasys.babel.core.Babel;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.exceptions.InvalidParameterException;
 import pt.unl.fct.di.novasys.babel.exceptions.ProtocolAlreadyExistsException;
+import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import pt.unl.fct.di.novasys.channel.simpleclientserver.SimpleClientChannel;
@@ -69,7 +70,7 @@ public class OpenGoodsMarketClient {
     public final static String NUMBER_OF_CLIENTS = "clients";
     private short initial_port;
     private short number_of_clients;
-    
+
     public final static String APP_SERVER_PROTO = "server_proto";
     private short application_proto_number;
     
@@ -83,11 +84,9 @@ public class OpenGoodsMarketClient {
     
     public final static String SERVER_LIST = "server_list";
 
-    public final static String STATS_PERIOD = "report_period";
-    private long report_period; //miliseconds;
-
     private long operation_refresh_timer;
     private long operation_timeout;
+	private final int sendPeriod;
     
     private KeyStore exchange;
     private KeyStore keystore;
@@ -138,6 +137,8 @@ public class OpenGoodsMarketClient {
 
     	this.initial_port = Short.parseShort(props.getProperty(INITIAL_PORT));
     	this.number_of_clients = Short.parseShort(props.getProperty(NUMBER_OF_CLIENTS));
+		var opsSec = Short.parseShort(props.getProperty("ops_sec", "1"));
+		this.sendPeriod = Math.max(1000 / opsSec, 1);
     	         
         this.operation_refresh_timer = Long.parseLong(props.getProperty(REFRESH_TIMER));
         this.operation_timeout = Long.parseLong(props.getProperty(OPERATION_TIMEOUT));
@@ -146,9 +147,7 @@ public class OpenGoodsMarketClient {
         
         this.offer = Integer.parseInt(props.getProperty(OFFER_FRACTION,"5"));
         this.want = Integer.parseInt(props.getProperty(WANT_FRACTION,"5"));
-        
-        this.report_period = Long.parseLong(props.getProperty(STATS_PERIOD));
-        
+
         this.ops = new OPER[offer+want];
 
         int j = 0;
@@ -215,11 +214,6 @@ public class OpenGoodsMarketClient {
 			e.printStackTrace();
 			System.exit(3);
     	 }
-    	 
-    	 for(short i = 0; i < this.number_of_clients; i++) {
-    		 //System.err.println("Starting client: " + this.clients[i].client_name);
-    		 this.clients[i].startClient();
-    	 }
     }
     
     
@@ -236,12 +230,12 @@ public class OpenGoodsMarketClient {
   
     	private Random r;
     	
-    	private ArrayList<PublicKey> clients;
+    	private ArrayList<PublicKey> clientKeys;
     	
     	private EventLoopGroup nm;
 
 		private HashMap<UUID,Long> pending;
-    	
+
     	public ExchangeClient(short port, char[] password, EventLoopGroup nm, Babel b) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
     		super(OpenGoodsMarketClient.PROTO_NAME, (short) (OpenGoodsMarketClient.PROTO_ID));
 			this.client_name = "exchange";
@@ -256,7 +250,7 @@ public class OpenGoodsMarketClient {
 			
 			r = new Random(System.currentTimeMillis());
 			
-			this.clients = new ArrayList<>();
+			this.clientKeys = new ArrayList<>();
 
 			this.pending = new HashMap<>();
     	}
@@ -291,10 +285,16 @@ public class OpenGoodsMarketClient {
 		    	//System.err.println("Exchange opening connection to " + servers[i] + " on channel " + clientChannel[i]);
 		        openConnection(servers[i], clientChannel[i]);
 	    	}
-	    	
-	    	registerTimerHandler(NextOperation.TIMER_ID, this::handleNextOperationTimer);
+			registerTimerHandler(NextOperation.TIMER_ID, this::uponNextOperationTimer);
 		}
-		
+
+		private void uponNextOperationTimer(NextOperation t, long id) {
+			if (clientKeys.isEmpty()) {
+				clientKeys.addAll(wallets.keySet());
+			}
+			deposit(clientKeys.remove(r.nextInt(clientKeys.size())));
+		}
+
 		private void uponServerDown(ServerDownEvent event, int channel) {
 			logger.warn(client_name + " " + event);
 		}
@@ -309,43 +309,27 @@ public class OpenGoodsMarketClient {
 		
 		public void makeInitialDeposit( ) throws InvalidKeyException, NoSuchAlgorithmException, SignatureException, InvalidSerializerException {
 			for(PublicKey client: wallets.keySet()) {
-			
-				Deposit d = new Deposit(client, 2000);
-				d.signMessage(key);
-
-				sendMessage(clientChannel[lastServerUsed], d, application_proto_number, servers[this.lastServerUsed], 0);
-				pending.put(d.getRid(), System.currentTimeMillis());
-
-				lastServerUsed++;
-				if(lastServerUsed == servers.length)
-					lastServerUsed = 0;
+				deposit(client);
 			}
-			
-			setupPeriodicTimer(new NextOperation(), 5*1000, 5*1000);
+			for(short i = 0; i < number_of_clients; i++) {
+				clients[i].beginSendingOperations();
+			}
+			setupPeriodicTimer(new NextOperation(), sendPeriod, sendPeriod);
 		}
 
 		public void handleOperationStatusReplyMessage(OperationStatusReply osr, Host from, short sourceProto, int channelID ) {
 			if(this.pending.containsKey(osr.getrID())) {
 				long time = System.currentTimeMillis();
-				switch(osr.getStatus()) {
-					case REJECTED:
-						Metrics.writeMetric("operation_rejected", "latency", Long.toString(time - pending.remove(osr.getrID())));
-						break;
-					case FAILED:
-						Metrics.writeMetric("operation_failed", "latency", Long.toString(time - pending.remove(osr.getrID())));
-						break;
-					case EXECUTED:
-						Metrics.writeMetric("operation_executed", "latency", Long.toString(time - pending.remove(osr.getrID())));
-						break;
-					case CANCELLED:
-						//Should never happen
-						break;
-					case PENDING:
-					case UNKNOWN:
-					default:
-						setupTimer(new NextCheck(osr.getrID()), operation_refresh_timer);
-						break;
+				switch (osr.getStatus()) {
+					case REJECTED ->
+							Metrics.writeMetric("operation_rejected", "latency", Long.toString(time - pending.remove(osr.getrID())));
+					case FAILED ->
+							Metrics.writeMetric("operation_failed", "latency", Long.toString(time - pending.remove(osr.getrID())));
+					case EXECUTED ->
+							Metrics.writeMetric("operation_executed", "latency", Long.toString(time - pending.remove(osr.getrID())));
 
+					default -> {
+					}
 				}
 			} //Else nothing to be done
 		}
@@ -356,20 +340,15 @@ public class OpenGoodsMarketClient {
 				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
 			} //Else nothing to be done
 		}
-		
-		public void handleNextOperationTimer(NextOperation no, long delay) {
-			//System.err.println("Exchange: Generating new operation...");
-			
+
+		private void deposit(PublicKey client) {
 			try {
-				if(clients.isEmpty()) {
-					clients.addAll(wallets.keySet());
-				}
-				
-				Deposit d = new Deposit(clients.remove(r.nextInt(clients.size())), 2000);
+				Deposit d = new Deposit(client, 2000);
 				d.signMessage(key);
-				
+
 				sendMessage(clientChannel[lastServerUsed], d, application_proto_number, servers[this.lastServerUsed], 0);
 				pending.put(d.getRid(), System.currentTimeMillis());
+
 				lastServerUsed++;
 				if(lastServerUsed == servers.length)
 					lastServerUsed = 0;
@@ -378,8 +357,6 @@ public class OpenGoodsMarketClient {
 				System.exit(2);
 			}
 		}
-		
-
     }
     
     protected class ClientInstance extends GenericProtocol {
@@ -418,10 +395,6 @@ public class OpenGoodsMarketClient {
 			
 			this.r = new Random(System.currentTimeMillis());
 		}
-
-    	public void startClient() {
-    		setupPeriodicTimer(new NextOperation(), 10*1000, 10*1000);
-    	}
 		
 		@Override
 		public void init(Properties props) throws HandlerRegistrationException, IOException {
@@ -453,15 +426,19 @@ public class OpenGoodsMarketClient {
 		    	//System.err.println("Client " + client_name + " opening connection to " + servers[i] + " on channel " + clientChannel[i]);
 		        openConnection(servers[i], clientChannel[i]);
 			}
-	    	
-	    	registerTimerHandler(NextOperation.TIMER_ID, this::handleNextOperationTimer);
+
+			registerTimerHandler(NextOperation.TIMER_ID, this::handleNextOperationTimer);
 	    	registerTimerHandler(NextCheck.TIMER_ID, this::handleNextCheckTimer);
 	    	registerTimerHandler(ExpiredOperation.TIMER_ID, this::handleExpiredOperationTimer);
 	    		    
 	    	this.myPrimaryChannel = clientChannel[client_id % servers.length];
 	    	this.myPrimaryServer = servers[client_id % servers.length];
 		}
-		
+
+		private void handleNextOperationTimer(NextOperation t, long id) {
+			sendOperation();
+		}
+
 		private void uponServerDown(ServerDownEvent event, int channel) {
 			logger.warn(client_name + " " + event);
 		}
@@ -496,7 +473,7 @@ public class OpenGoodsMarketClient {
 					setupTimer(new NextCheck(osr.getrID()), operation_refresh_timer);
 					break;
 				
-				}	
+				}
 			} //Else nothing to be done
 		}
 		
@@ -506,50 +483,7 @@ public class OpenGoodsMarketClient {
 				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
 			} //Else nothing to be done
 		}
-		
-		public void handleNextOperationTimer(NextOperation no, long delay) {
-			//System.err.println(this.client_name + ": Generating new operation...");
-			
-			try {
-				
-				OPER op = ops[r.nextInt(ops.length)];
-				
-				SignedProtoMessage operation = null;
-				UUID id = null;
-				Float f = null;
-				
-				switch(op) {
-				case OFFER:
-					IssueOffer o1 = new IssueOffer(identity, items[r.nextInt(items.length)], quantity[r.nextInt(quantity.length)], price[r.nextInt(price.length)]);
-					id = o1.getRid();
-					f = wallets.get(identity);
-					wallets.put(identity, (f==null?0:f.floatValue()) + o1.getPricePerUnit() * o1.getQuantity());
-					operation = o1;
-					operation.signMessage(key);
-					break;
-				case WANT:
-					IssueWant o2 = new IssueWant(identity, items[r.nextInt(items.length)], quantity[r.nextInt(quantity.length)], price[r.nextInt(price.length)]);
-					id = o2.getRid();
-					operation  = o2;
-					operation.signMessage(key);
-					f = wallets.get(identity);
-					float newValue = (f==null?0:f.floatValue()) - o2.getPricePerUnit() * o2.getQuantity();
-					if(newValue < 0) return;
-					wallets.put(identity, newValue);
-					break;
-				}
-				
-				this.pending.put(id, System.currentTimeMillis());
-				sendMessage(this.myPrimaryChannel, operation, application_proto_number, this.myPrimaryServer, 0);
-				setupTimer(new NextCheck(id), operation_refresh_timer);
-				setupTimer(new ExpiredOperation(id, operation), operation_timeout);
-			
-			} catch (Exception e) {
-				e.printStackTrace();
-				System.exit(1);
-			}
-		}
-		
+
 		public void handleNextCheckTimer(NextCheck nc, long delay) {
 			if(!this.pending.containsKey(nc.req)) return;
 			
@@ -559,14 +493,58 @@ public class OpenGoodsMarketClient {
 
 		public void handleExpiredOperationTimer(ExpiredOperation eo, long delay) {
 			if(!this.pending.containsKey(eo.req)) return;
-			
+
+			logger.warn("Operation " + eo.req + " expired");
 			for(int i = 0; i < servers.length; i++) {
 				sendMessage(clientChannel[i], eo.message, application_proto_number, servers[i], 0);
 			}
+		}
+
+		public void sendOperation() {
+			try {
+				OPER op = ops[r.nextInt(ops.length)];
+
+				SignedProtoMessage operation = null;
+				UUID id = null;
+				Float f;
+
+				switch (op) {
+					case OFFER -> {
+						IssueOffer o1 = new IssueOffer(identity, items[r.nextInt(items.length)], quantity[r.nextInt(quantity.length)], price[r.nextInt(price.length)]);
+						id = o1.getRid();
+						f = wallets.get(identity);
+						wallets.put(identity, (f == null ? 0 : f) + o1.getPricePerUnit() * o1.getQuantity());
+						operation = o1;
+						operation.signMessage(key);
+					}
+					case WANT -> {
+						IssueWant o2 = new IssueWant(identity, items[r.nextInt(items.length)], quantity[r.nextInt(quantity.length)], price[r.nextInt(price.length)]);
+						id = o2.getRid();
+						operation = o2;
+						operation.signMessage(key);
+						f = wallets.get(identity);
+						float newValue = (f == null ? 0 : f) - o2.getPricePerUnit() * o2.getQuantity();
+						if (newValue < 0) return;
+						wallets.put(identity, newValue);
+					}
+				}
+
+				this.pending.put(id, System.currentTimeMillis());
+				sendMessage(this.myPrimaryChannel, operation, application_proto_number, this.myPrimaryServer, 0);
+				setupTimer(new NextCheck(id), operation_refresh_timer);
+				setupTimer(new ExpiredOperation(id, operation), operation_timeout);
+
+			} catch (Exception e) {
+				e.printStackTrace();
+				System.exit(1);
+			}
 
 		}
-    	
-    }
+
+		public void beginSendingOperations() {
+			setupPeriodicTimer(new NextOperation(), 0, sendPeriod);
+		}
+	}
     
 
     private static String getAddress(String inter) throws SocketException {

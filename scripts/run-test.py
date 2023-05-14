@@ -11,8 +11,8 @@ cwd = os.getcwd()
 pause = 10
 
 
-def run_replicas(n: int):
-    for i in range(1, n + 1):
+def run_replicas(num: int, ops_block: int):
+    for i in range(1, num + 1):
         cmd = [
             "docker", "run",
             f"--name=open-goods_server{i}",
@@ -38,13 +38,14 @@ def run_replicas(n: int):
             f"crypto_name=node{i}",
             "bootstrap_primary_id=1",
             f"metrics_name=node{i}",
+            f"max_ops_per_block={ops_block}",
         ]
 
         subprocess.Popen(cmd)
 
 
-def run_clients(n: int):
-    if n == 0:
+def run_clients(num: int, ops_sec: int):
+    if num == 0:
         return
 
     cmd = [
@@ -65,8 +66,9 @@ def run_clients(n: int):
         "java", "-ea",
         "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=clients",
         "-jar", "clients.jar",
-        f"clients={n}",
-        f"metrics_name=clients",
+        f"clients={num}",
+        "metrics_name=clients",
+        f"ops_sec={ops_sec}"
     ]
     subprocess.Popen(cmd)
 
@@ -85,17 +87,17 @@ if '__main__' == __name__:
     parser.add_argument("-r", "--replicas", type=int, default=4)
     parser.add_argument("-c", "--clients", type=int, default=5)
     parser.add_argument("-d", "--duration", type=int, default=0)
+    parser.add_argument("-o", "--ops_sec", type=int, default=10)
+    parser.add_argument("-b", "--ops_per_block", type=int, default=0)
 
     args = parser.parse_args()
-    num_replicas = args.replicas
-    num_clients = args.clients
 
-    print(f"Starting {num_replicas} replicas")
-    run_replicas(num_replicas)
+    print(f"Starting {args.replicas} replicas")
+    run_replicas(args.replicas, args.ops_per_block)
     print(f"Waiting {pause}s to start clients")
     time.sleep(pause)
-    print(f"Starting {num_clients} clients")
-    run_clients(num_clients)
+    print(f"Starting {args.clients} clients + 1 exchange")
+    run_clients(args.clients, args.ops_sec)
 
     if args.duration <= 0:
         wait_for_enter()

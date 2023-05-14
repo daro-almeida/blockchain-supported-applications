@@ -44,11 +44,10 @@ public class Metrics {
         if (fileOutputStream == null || param.length < 2 || param.length % 2 != 0)
             return;
 
-        var now = clock.instant();
-        var nanoNow = now.getEpochSecond() * 1_000_000_000 + ((long) now.getNano());
+        var now = System.currentTimeMillis();
         Map<String, String> metricParams = new HashMap<>();
         metricParams.put("metric", metric);
-        metricParams.put("time", String.valueOf(nanoNow));
+        metricParams.put("time", String.valueOf(now));
         for (int i = 0; i < param.length; i += 2) {
             metricParams.put(param[i], param[i + 1]);
         }

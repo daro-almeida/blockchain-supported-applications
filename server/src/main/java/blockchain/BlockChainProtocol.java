@@ -56,8 +56,6 @@ public class BlockChainProtocol extends GenericProtocol {
 	private long forceBlockTimer = -1;
 	private final Map<UUID, Long> leaderSuspectTimers = new HashMap<>();
 
-	private List<ClientRequest> blockOps = new LinkedList<>();
-
 	// <requestId, (request, timestamp)>
 	private final Map<UUID, PendingRequest> pendingRequests = new HashMap<>();
 	// <requestId, set<nodeId>>
@@ -152,10 +150,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 
 		if (amLeader()) {
-			blockOps.add(req);
-			submitFullBlock(false);
-			cancelTimer(noOpTimer);
-			noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
+			queueRequest(req);
 		} else {
 			var message = new RedirectClientRequestMessage(req, this.self.id());
 			Crypto.signMessage(message, this.key);
@@ -286,10 +281,7 @@ public class BlockChainProtocol extends GenericProtocol {
 			return;
 		}
 
-		blockOps.add(msg.getRequest());
-		submitFullBlock(false);
-
-		cancelTimer(noOpTimer);
+		queueRequest(msg.getRequest());
 	}
 
 	private void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender,
@@ -380,8 +372,10 @@ public class BlockChainProtocol extends GenericProtocol {
 	}
 
 	private void handleForceBlockTimer(ForceBlockTimer timer, long l) {
-		logger.debug("Forcing block creation");
-		submitFullBlock(true);
+		if (blockChain.nextBlockSize() == 0)
+			return;
+		logger.warn("Forcing block creation");
+		submitBlock(true);
 	}
 
 	/*
@@ -465,22 +459,30 @@ public class BlockChainProtocol extends GenericProtocol {
 	/*
 	 * Create block and fill with ops. When block is full, send to Consensus Protocol.
 	 */
-	private void submitFullBlock(boolean force) {
-		assert blockOps.size() <= maxOps && blockOps.size() > 0 && amLeader();
+	private void submitBlock(boolean force) {
+		var size = blockChain.nextBlockSize();
 
-		//setup timer if it's the first operation we are receiving
-		if (blockOps.size() == 1 && !force) {
+		assert amLeader();
+		assert size > 0;
+		assert size <= maxOps;
+
+		if (size == 1 && !force) {
 			forceBlockTimer = setupTimer(new ForceBlockTimer(), forceBlockTimeout);
-		} else if (blockOps.size() == maxOps || force) {
-			var block = blockChain.newBlock(blockOps, self.id());
+		} else if (size == maxOps || force) {
+			var block = blockChain.newBlock(self.id());
 			var signature = block.sign(this.key);
 			var blockBytes = block.serialized();
-			logger.info("Proposing block with " + blockOps.size() + " operations");
+			logger.info("Proposing block with " + size + " operations");
 			sendRequest(new ProposeRequest(blockBytes, signature), PBFTProtocol.PROTO_ID);
-			blockOps = new LinkedList<>();
-
 			cancelTimer(forceBlockTimer);
 		}
+	}
+
+	private void queueRequest(ClientRequest req) {
+		blockChain.addOpToNextBlock(req);
+		submitBlock(false);
+		cancelTimer(noOpTimer);
+		noOpTimer = setupTimer(new NoOpTimer(), noOpTimeout);
 	}
 
 	private boolean amLeader() {
