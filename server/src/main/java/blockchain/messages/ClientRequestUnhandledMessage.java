@@ -4,7 +4,6 @@ import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
-import utils.Utils;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -37,7 +36,7 @@ public class ClientRequestUnhandledMessage extends SignedProtoMessage {
 		public void serializeBody(ClientRequestUnhandledMessage protoMessage, ByteBuf out) throws IOException {
 			out.writeInt(protoMessage.requests.size());
 			for (ClientRequest request : protoMessage.requests) {
-				Utils.byteArraySerializer.serialize(request.toBytes(), out);
+				ClientRequest.serializer.serialize(request, out);
 			}
 			out.writeInt(protoMessage.nodeId);
 

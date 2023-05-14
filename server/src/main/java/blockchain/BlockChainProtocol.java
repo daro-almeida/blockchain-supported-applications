@@ -145,12 +145,12 @@ public class BlockChainProtocol extends GenericProtocol {
 		logger.debug("Received client request: " + req.getRequestId());
 
 		if (blockChain.containsOperation(req.getRequestId())) {
-			logger.warn("Received repeated request from app: {} ", req.getRequestId());
+			logger.debug("Received repeated request from app: {} ", req.getRequestId());
 			return;
 		}
 
 		if (amLeader()) {
-			queueRequest(req);
+			submitRequest(req);
 		} else {
 			var message = new RedirectClientRequestMessage(req, this.self.id());
 			Crypto.signMessage(message, this.key);
@@ -236,7 +236,7 @@ public class BlockChainProtocol extends GenericProtocol {
 				sendRequest(new SuspectLeader(view.getViewNumber()), PBFTProtocol.PROTO_ID);
 			} else {
 				// send all pending ops
-				logger.debug("Resubmitting pending requests");
+				logger.warn("Re-handling pending requests from invalid block of old leader");
 				block.getOperations().stream()
 						.distinct()
 						.filter(req -> req.checkSignature() && pendingRequests.containsKey(req.getRequestId()))
@@ -277,11 +277,11 @@ public class BlockChainProtocol extends GenericProtocol {
 
 		// checking if request is repeated
 		if (blockChain.containsOperation(msg.getRequest())) {
-			logger.warn("Received repeated request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
+			logger.debug("Received repeated request from node{}: {} ", msg.getNodeId(), msg.getRequest().getRequestId());
 			return;
 		}
 
-		queueRequest(msg.getRequest());
+		submitRequest(msg.getRequest());
 	}
 
 	private void handleClientRequestUnhandledMessage(ClientRequestUnhandledMessage msg, Host sender,
@@ -289,7 +289,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		if (!validateHandleClientRequestUnhandledMessage(msg))
 			return;
 
-		logger.warn("Received unhandled requests from node{}: {} ", msg.getNodeId(), msg.getRequests());
+		logger.debug("Received unhandled requests from node{}", msg.getNodeId());
 
 		Set<UUID> unhandledRequestsHere = msg.getRequests().stream()
 				.filter(req -> !blockChain.containsOperation(req))
@@ -306,7 +306,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		processSuspectsIds(unhandledRequestsHere, self.id());
 
 		view.forEach(node -> {
-			if (!node.equals(self))
+			if (!node.equals(self) && !node.equals(view.getPrimary()))
 				sendMessage(suspectMessage, node.host());
 		});
 	}
@@ -335,16 +335,17 @@ public class BlockChainProtocol extends GenericProtocol {
 		pendingRequests.forEach((reqId, req) -> {
 			if (req.timestamp() <= System.currentTimeMillis() - requestTimeout &&
 					!leaderSuspectTimers.containsKey(reqId)) {
-				logger.warn("Request " + reqId + " unhandled for too long!");
 				unhandledRequests.add(req.request());
 			}
 		});
 		if (unhandledRequests.isEmpty())
 			return;
+		logger.warn("Requests unhandled for too long!");
 
 		var message = new ClientRequestUnhandledMessage(unhandledRequests, self.id());
+		Crypto.signMessage(message, this.key);
 		view.forEach(node -> {
-			if (!node.equals(self))
+			if (!node.equals(self) && !node.equals(view.getPrimary()))
 				sendMessage(message, node.host());
 		});
 
@@ -383,7 +384,8 @@ public class BlockChainProtocol extends GenericProtocol {
 	 */
 
 	private void processSuspectsIds(Set<UUID> requestIds, int nodeId) {
-		logger.warn("Received valid suspect message for requests " + requestIds + " from node" + nodeId);
+		if (this.self.id() != nodeId)
+			logger.warn("Received valid suspect message for requests from node" + nodeId);
 
 		Set<UUID> suspectedRequests = new HashSet<>();
 		for (var reqId : requestIds) {
@@ -399,7 +401,7 @@ public class BlockChainProtocol extends GenericProtocol {
 		for (var reqId : suspectedRequests)
 			leaderSuspectTimers.put(reqId, timerId);
 
-		logger.warn("Starting suspect leader timer for requests " + suspectedRequests);
+		logger.warn("Starting suspect leader timer for requests.");
 	}
 
 	private boolean isNoOp(byte[] op) {
@@ -478,7 +480,10 @@ public class BlockChainProtocol extends GenericProtocol {
 		}
 	}
 
-	private void queueRequest(ClientRequest req) {
+	private void submitRequest(ClientRequest req) {
+		if (!amLeader())
+			return;
+
 		blockChain.addOpToNextBlock(req);
 		submitBlock(false);
 		cancelTimer(noOpTimer);
