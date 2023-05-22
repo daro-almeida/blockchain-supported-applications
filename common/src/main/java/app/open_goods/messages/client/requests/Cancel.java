@@ -1,6 +1,6 @@
-package app.messages.client.requests;
+package app.open_goods.messages.client.requests;
 
-import app.messages.WriteOperation;
+import app.open_goods.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 

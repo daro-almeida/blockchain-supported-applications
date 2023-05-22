@@ -1,6 +1,6 @@
-package app.messages.client.requests;
+package app.open_goods.messages.client.requests;
 
-import app.messages.WriteOperation;
+import app.open_goods.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -13,19 +13,18 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Objects;
 import java.util.UUID;
 
-public class IssueOffer extends WriteOperation {
+public class IssueWant extends WriteOperation {
 
-	public final static short MESSAGE_ID = 303;
+	public final static short MESSAGE_ID = 304;
 	
 	private final UUID rid;
 	private final PublicKey cID;
 	private final String resourceType;
 	private final int quantity;
 	private final float pricePerUnit;
-	
-	
-	public IssueOffer(PublicKey cID, String resourceType, int quantity, float price) {
-		super(IssueOffer.MESSAGE_ID, OperationType.ISSUE_OFFER);
+
+	public IssueWant(PublicKey cID, String resourceType, int quantity, float price) {
+		super(IssueWant.MESSAGE_ID, OperationType.ISSUE_WANT);
 		this.rid = UUID.randomUUID();
 		this.cID = cID;
 		this.resourceType = resourceType;
@@ -33,8 +32,8 @@ public class IssueOffer extends WriteOperation {
 		this.pricePerUnit = price;
 	}
 
-	private IssueOffer(UUID rid, PublicKey cID, String resourceType, int quantity, float price) {
-		super(IssueOffer.MESSAGE_ID, OperationType.ISSUE_OFFER);
+	private IssueWant(UUID rid, PublicKey cID, String resourceType, int quantity, float price) {
+		super(IssueWant.MESSAGE_ID, OperationType.ISSUE_WANT);
 		this.rid = rid;
 		this.cID = cID;
 		this.resourceType = resourceType;
@@ -42,24 +41,24 @@ public class IssueOffer extends WriteOperation {
 		this.pricePerUnit = price;
 	}
 	
-	public static final ISerializer<IssueOffer> serializer = new ISerializer<>() {
+	public static final ISerializer<IssueWant> serializer = new ISerializer<>() {
 
 		@Override
-		public void serialize(IssueOffer io, ByteBuf out) throws IOException {
-			out.writeLong(io.rid.getMostSignificantBits());
-			out.writeLong(io.rid.getLeastSignificantBits());
-			byte[] pk = io.cID.getEncoded();
+		public void serialize(IssueWant iw, ByteBuf out) throws IOException {
+			out.writeLong(iw.rid.getMostSignificantBits());
+			out.writeLong(iw.rid.getLeastSignificantBits());
+			byte[] pk = iw.cID.getEncoded();
 			out.writeShort(pk.length);
 			out.writeBytes(pk);
-			byte[] r = io.resourceType.getBytes();
+			byte[] r = iw.resourceType.getBytes();
 			out.writeShort(r.length);
 			out.writeBytes(r);
-			out.writeInt(io.quantity);
-			out.writeFloat(io.pricePerUnit);
+			out.writeInt(iw.quantity);
+			out.writeFloat(iw.pricePerUnit);
 		}
 
 		@Override
-		public IssueOffer deserialize(ByteBuf in) throws IOException {
+		public IssueWant deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			short l = in.readShort();
@@ -76,10 +75,8 @@ public class IssueOffer extends WriteOperation {
 			in.readBytes(rt);
 			int q = in.readInt();
 			float pu = in.readFloat();
-			return new IssueOffer(new UUID(msb,lsb), cID, new String(rt), q, pu);
-			
+			return new IssueWant(new UUID(msb,lsb), cID, new String(rt), q, pu);
 		}
-	
 	};
 
 	public UUID getRid() {
@@ -106,8 +103,8 @@ public class IssueOffer extends WriteOperation {
 	public boolean equals(Object o) {
 		if (this == o) return true;
 		if (o == null || getClass() != o.getClass()) return false;
-		IssueOffer that = (IssueOffer) o;
-		return Objects.equals(rid, that.rid);
+		IssueWant issueWant = (IssueWant) o;
+		return Objects.equals(rid, issueWant.rid);
 	}
 
 	@Override

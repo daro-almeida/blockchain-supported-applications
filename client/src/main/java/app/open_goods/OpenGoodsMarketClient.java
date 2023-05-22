@@ -1,4 +1,4 @@
-package app;
+package app.open_goods;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -24,29 +24,28 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import app.messages.WriteOperation;
-import app.timers.NextOperation;
+import app.open_goods.messages.WriteOperation;
+import app.open_goods.timers.NextOperation;
 import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import app.messages.client.replies.GenericClientReply;
-import app.messages.client.replies.OperationStatusReply;
-import app.messages.client.requests.Cancel;
-import app.messages.client.requests.CheckOperationStatus;
-import app.messages.client.requests.IssueOffer;
-import app.messages.client.requests.IssueWant;
-import app.messages.exchange.requests.Deposit;
-import app.messages.exchange.requests.Withdrawal;
-import app.timers.ExpiredOperation;
-import app.timers.NextCheck;
+import app.open_goods.messages.client.replies.GenericClientReply;
+import app.open_goods.messages.client.replies.OperationStatusReply;
+import app.open_goods.messages.client.requests.Cancel;
+import app.open_goods.messages.client.requests.CheckOperationStatus;
+import app.open_goods.messages.client.requests.IssueOffer;
+import app.open_goods.messages.client.requests.IssueWant;
+import app.open_goods.messages.exchange.requests.Deposit;
+import app.open_goods.messages.exchange.requests.Withdrawal;
+import app.open_goods.timers.ExpiredOperation;
+import app.open_goods.timers.NextCheck;
 import io.netty.channel.EventLoopGroup;
 import pt.unl.fct.di.novasys.babel.core.Babel;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.exceptions.InvalidParameterException;
 import pt.unl.fct.di.novasys.babel.exceptions.ProtocolAlreadyExistsException;
-import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
 import pt.unl.fct.di.novasys.babel.generic.signed.InvalidSerializerException;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import pt.unl.fct.di.novasys.channel.simpleclientserver.SimpleClientChannel;

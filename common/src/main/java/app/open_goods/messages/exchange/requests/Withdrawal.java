@@ -1,6 +1,6 @@
-package app.messages.exchange.requests;
+package app.open_goods.messages.exchange.requests;
 
-import app.messages.WriteOperation;
+import app.open_goods.messages.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -12,42 +12,42 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.UUID;
 
-public class Deposit extends WriteOperation {
+public class Withdrawal extends WriteOperation {
 
-	public final static short MESSAGE_ID = 301;
+	public final static short MESSAGE_ID = 302;
 	
 	private final UUID rid;
 	private final PublicKey clientID;
 	private final float amount;
 	
-	public Deposit(PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
+	public Withdrawal(PublicKey cID, float a) {
+		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
 		this.rid = UUID.randomUUID();
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	private Deposit(UUID rid, PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
+	private Withdrawal(UUID rid, PublicKey cID, float a) {
+		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
 		this.rid = rid;
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
-	public final static ISerializer<Deposit> serializer = new ISerializer<>() {
+	public final static ISerializer<Withdrawal> serializer = new ISerializer<>() {
 
 		@Override
-		public void serialize(Deposit d, ByteBuf out) throws IOException {
-			out.writeLong(d.rid.getMostSignificantBits());
-			out.writeLong(d.rid.getLeastSignificantBits());
-			byte[] pk = d.clientID.getEncoded();
+		public void serialize(Withdrawal w, ByteBuf out) throws IOException {
+			out.writeLong(w.rid.getMostSignificantBits());
+			out.writeLong(w.rid.getLeastSignificantBits());
+			byte[] pk = w.clientID.getEncoded();
 			out.writeShort(pk.length);
 			out.writeBytes(pk);
-			out.writeFloat(d.amount);
+			out.writeFloat(w.amount);
 		}
 
 		@Override
-		public Deposit deserialize(ByteBuf in) throws IOException {
+		public Withdrawal deserialize(ByteBuf in) throws IOException {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			short l = in.readShort();
@@ -60,7 +60,7 @@ public class Deposit extends WriteOperation {
 				e.printStackTrace();
 			}
 			float a = in.readFloat();
-			return new Deposit(new UUID(msb,lsb), cID, a);
+			return new Withdrawal(new UUID(msb,lsb), cID, a);
 		}
 	
 	};
@@ -72,7 +72,6 @@ public class Deposit extends WriteOperation {
 	public PublicKey getClientID() {
 		return clientID;
 	}
-
 
 	public UUID getRid() {
 		return rid;

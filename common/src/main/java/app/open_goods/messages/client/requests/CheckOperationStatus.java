@@ -1,4 +1,4 @@
-package app.messages.client.requests;
+package app.open_goods.messages.client.requests;
 
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;

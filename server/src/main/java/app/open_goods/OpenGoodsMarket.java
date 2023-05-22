@@ -1,15 +1,15 @@
 package app.open_goods;
 
-import app.messages.WriteOperation;
-import app.messages.client.replies.GenericClientReply;
-import app.messages.client.replies.OperationStatusReply;
-import app.messages.client.replies.OperationStatusReply.Status;
-import app.messages.client.requests.Cancel;
-import app.messages.client.requests.CheckOperationStatus;
-import app.messages.client.requests.IssueOffer;
-import app.messages.client.requests.IssueWant;
-import app.messages.exchange.requests.Deposit;
-import app.messages.exchange.requests.Withdrawal;
+import app.open_goods.messages.WriteOperation;
+import app.open_goods.messages.client.replies.GenericClientReply;
+import app.open_goods.messages.client.replies.OperationStatusReply;
+import app.open_goods.messages.client.replies.OperationStatusReply.Status;
+import app.open_goods.messages.client.requests.Cancel;
+import app.open_goods.messages.client.requests.CheckOperationStatus;
+import app.open_goods.messages.client.requests.IssueOffer;
+import app.open_goods.messages.client.requests.IssueWant;
+import app.open_goods.messages.exchange.requests.Deposit;
+import app.open_goods.messages.exchange.requests.Withdrawal;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import blockchain.requests.ClientRequest;
