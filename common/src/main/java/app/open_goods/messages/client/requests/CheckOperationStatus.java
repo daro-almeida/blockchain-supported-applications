@@ -13,32 +13,30 @@ public class CheckOperationStatus extends ProtoMessage {
 	
 	private final UUID rID;
 
-	
 	public CheckOperationStatus(UUID rID) {
 		super(CheckOperationStatus.MESSAGE_ID);
 		this.rID = rID;
-
 	}
 	
 	public UUID getrID() {
 		return rID;
 	}
 
-	public static ISerializer<CheckOperationStatus> serializer = new ISerializer<CheckOperationStatus>() {
+	public static ISerializer<CheckOperationStatus> serializer = new ISerializer<>() {
 
 		@Override
-		public void serialize(CheckOperationStatus t, ByteBuf out) throws IOException {
+		public void serialize(CheckOperationStatus t, ByteBuf out) {
 			out.writeLong(t.rID.getMostSignificantBits());
 			out.writeLong(t.rID.getLeastSignificantBits());
 		}
 
 		@Override
-		public CheckOperationStatus deserialize(ByteBuf in) throws IOException {
+		public CheckOperationStatus deserialize(ByteBuf in) {
 			long msb = in.readLong();
 			long lsb = in.readLong();
-			
-			return new CheckOperationStatus(new UUID(msb,lsb));
-		
+
+			return new CheckOperationStatus(new UUID(msb, lsb));
+
 		}
 	};
 

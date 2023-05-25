@@ -1,6 +1,6 @@
 package app.open_goods.messages.client.requests;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -25,7 +25,7 @@ public class IssueOffer extends WriteOperation {
 	
 	
 	public IssueOffer(PublicKey cID, String resourceType, int quantity, float price) {
-		super(IssueOffer.MESSAGE_ID, OperationType.ISSUE_OFFER);
+		super(IssueOffer.MESSAGE_ID);
 		this.rid = UUID.randomUUID();
 		this.cID = cID;
 		this.resourceType = resourceType;
@@ -34,7 +34,7 @@ public class IssueOffer extends WriteOperation {
 	}
 
 	private IssueOffer(UUID rid, PublicKey cID, String resourceType, int quantity, float price) {
-		super(IssueOffer.MESSAGE_ID, OperationType.ISSUE_OFFER);
+		super(IssueOffer.MESSAGE_ID);
 		this.rid = rid;
 		this.cID = cID;
 		this.resourceType = resourceType;

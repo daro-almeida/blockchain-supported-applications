@@ -1,6 +1,6 @@
 package app.open_goods.messages.exchange.requests;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -21,14 +21,14 @@ public class Withdrawal extends WriteOperation {
 	private final float amount;
 	
 	public Withdrawal(PublicKey cID, float a) {
-		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
+		super(Withdrawal.MESSAGE_ID);
 		this.rid = UUID.randomUUID();
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
 	private Withdrawal(UUID rid, PublicKey cID, float a) {
-		super(Withdrawal.MESSAGE_ID, OperationType.WITHDRAWAL);
+		super(Withdrawal.MESSAGE_ID);
 		this.rid = rid;
 		this.clientID = cID;
 		this.amount = a;	
@@ -37,7 +37,7 @@ public class Withdrawal extends WriteOperation {
 	public final static ISerializer<Withdrawal> serializer = new ISerializer<>() {
 
 		@Override
-		public void serialize(Withdrawal w, ByteBuf out) throws IOException {
+		public void serialize(Withdrawal w, ByteBuf out) {
 			out.writeLong(w.rid.getMostSignificantBits());
 			out.writeLong(w.rid.getLeastSignificantBits());
 			byte[] pk = w.clientID.getEncoded();

@@ -24,7 +24,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import app.open_goods.timers.NextOperation;
 import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
@@ -68,10 +68,10 @@ public class OpenGoodsMarketClient {
     public final static String INITIAL_PORT = "initial_port";
     public final static String NUMBER_OF_CLIENTS = "clients";
     private short initial_port;
-    private short number_of_clients;
+    private final short number_of_clients;
 
     public final static String APP_SERVER_PROTO = "server_proto";
-    private short application_proto_number;
+    private final short application_proto_number;
     
     public final static String REFRESH_TIMER = "check_requests_period";
     public final static String OPERATION_TIMEOUT = "operation_timeout";
@@ -83,36 +83,36 @@ public class OpenGoodsMarketClient {
     
     public final static String SERVER_LIST = "server_list";
 
-    private long operation_refresh_timer;
-    private long operation_timeout;
+    private final long operation_refresh_timer;
+    private final long operation_timeout;
 	private final int sendPeriod;
     
-    private KeyStore exchange;
-    private KeyStore keystore;
+    private final KeyStore exchange;
+    private final KeyStore keystore;
     
     ExchangeClient exchangeClient;
     ClientInstance[] clients;
     
-    private ConcurrentHashMap<PublicKey, Float> wallets;
-    private String[] items = new String[] {"lettuce", "carrot", "potato", "milk", "chocolate", "bread", 
+    private final ConcurrentHashMap<PublicKey, Float> wallets;
+    private final String[] items = new String[] {"lettuce", "carrot", "potato", "milk", "chocolate", "bread",
     		"apple", "butter", "egg", "cheese", "toilet paper", "iogurt", "cookie", "knive", "fork", "spoon"};
-    private int[] quantity = new int[] {1, 2, 3, 5, 10, 15, 25, 50, 100, 150, 200, 300, 500};
-    private float[] price = new float[] {(float)0.5,(float)0.7, (float)1, (float)1.1, (float)1.2, (float)1.3, (float)1.5, (float)2.0, (float)2.2, (float)2.5, (float)3.0};
+    private final int[] quantity = new int[] {1, 2, 3, 5, 10, 15, 25, 50, 100, 150, 200, 300, 500};
+    private final float[] price = new float[] {(float)0.5,(float)0.7, (float)1, (float)1.1, (float)1.2, (float)1.3, (float)1.5, (float)2.0, (float)2.2, (float)2.5, (float)3.0};
     
-    private Host[] servers;
+    private final Host[] servers;
     
     public final static String OFFER_FRACTION = "offer_fraction";
     public final static String WANT_FRACTION = "want_fraction";
     
    
-    private int offer;
-    private int want;
+    private final int offer;
+    private final int want;
     
-    private enum OPER { OFFER, WANT };
+    private enum OPER { OFFER, WANT }
+
+	private OPER[] ops = null;
     
-    private OPER[] ops = null;
-    
-    private Babel b;
+    private final Babel b;
 
     public static void main(String[] args) throws InvalidParameterException, IOException,
             HandlerRegistrationException, ProtocolAlreadyExistsException, GeneralSecurityException {
@@ -217,26 +217,26 @@ public class OpenGoodsMarketClient {
     
     
     protected class ExchangeClient extends GenericProtocol {
-    	private String client_name;
+    	private final String client_name;
     	@SuppressWarnings("unused")
-		private PublicKey identity;
-    	private PrivateKey key;
+		private final PublicKey identity;
+    	private final PrivateKey key;
     	private int[] clientChannel;    
     	
-    	private Babel b;
+    	private final Babel b;
     	    	
     	private short lastServerUsed;
   
-    	private Random r;
+    	private final Random r;
     	
-    	private ArrayList<PublicKey> clientKeys;
+    	private final ArrayList<PublicKey> clientKeys;
     	
-    	private EventLoopGroup nm;
+    	private final EventLoopGroup nm;
 
-		private HashMap<UUID,Long> pending;
+		private final HashMap<UUID,Long> pending;
 
     	public ExchangeClient(short port, char[] password, EventLoopGroup nm, Babel b) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
-    		super(OpenGoodsMarketClient.PROTO_NAME, (short) (OpenGoodsMarketClient.PROTO_ID));
+    		super(OpenGoodsMarketClient.PROTO_NAME, OpenGoodsMarketClient.PROTO_ID);
 			this.client_name = "exchange";
 			this.identity = exchange.getCertificate(client_name).getPublicKey();
 			this.key = (PrivateKey) exchange.getKey(this.client_name, password);
@@ -360,22 +360,22 @@ public class OpenGoodsMarketClient {
     
     protected class ClientInstance extends GenericProtocol {
 
-    	private short client_id;
-    	private String client_name;
-    	private PublicKey identity;
-    	private PrivateKey key;
+    	private final short client_id;
+    	private final String client_name;
+    	private final PublicKey identity;
+    	private final PrivateKey key;
     	private int[] clientChannel;
     		
     	private Host myPrimaryServer;
     	private int myPrimaryChannel;
     	
-    	private Babel b;
+    	private final Babel b;
     	
-    	private HashMap<UUID,Long> pending;
+    	private final HashMap<UUID,Long> pending;
     	
-    	private Random r;
+    	private final Random r;
 
-    	private EventLoopGroup nm;
+    	private final EventLoopGroup nm;
     	
 		public ClientInstance(short client_id, short port, char[] password, EventLoopGroup nm, Babel b) throws KeyStoreException, ProtocolAlreadyExistsException, UnrecoverableKeyException, NoSuchAlgorithmException {
 			super(OpenGoodsMarketClient.PROTO_NAME + client_id, (short) (OpenGoodsMarketClient.PROTO_ID + client_id));

@@ -1,6 +1,6 @@
 package app.open_goods.messages.client.requests;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -21,14 +21,14 @@ public class Cancel extends WriteOperation {
 	private final PublicKey cID;
 	
 	public Cancel(UUID targetRequest, PublicKey cID) {
-		super(Cancel.MESSAGE_ID, OperationType.CANCEL);
+		super(Cancel.MESSAGE_ID);
 		this.rID = UUID.randomUUID();
 		this.targetRequest = targetRequest;
 		this.cID = cID;
 	}
 
 	private Cancel(UUID rID, UUID targetRequest, PublicKey cID) {
-		super(Cancel.MESSAGE_ID, OperationType.CANCEL);
+		super(Cancel.MESSAGE_ID);
 		this.rID = rID;
 		this.targetRequest = targetRequest;
 		this.cID = cID;
@@ -37,7 +37,7 @@ public class Cancel extends WriteOperation {
 	public final static ISerializer<Cancel> serializer = new ISerializer<>() {
 
 		@Override
-		public void serialize(Cancel c, ByteBuf out) throws IOException {
+		public void serialize(Cancel c, ByteBuf out) {
 			out.writeLong(c.rID.getMostSignificantBits());
 			out.writeLong(c.rID.getLeastSignificantBits());
 			out.writeLong(c.targetRequest.getMostSignificantBits());
@@ -48,7 +48,7 @@ public class Cancel extends WriteOperation {
 		}
 
 		@Override
-		public Cancel deserialize(ByteBuf in) throws IOException {
+		public Cancel deserialize(ByteBuf in) {
 			long msb = in.readLong();
 			long lsb = in.readLong();
 			long msb2 = in.readLong();
