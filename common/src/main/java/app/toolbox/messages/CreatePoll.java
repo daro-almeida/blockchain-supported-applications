@@ -10,7 +10,7 @@ import app.toolbox.Poll;
 
 public class CreatePoll extends WriteOperation {
     
-    public final static short MESSAGE_ID = 101;
+    public final static short MESSAGE_ID = 102;
 
     public enum PollStatus {OPEN, CLOSED};
     

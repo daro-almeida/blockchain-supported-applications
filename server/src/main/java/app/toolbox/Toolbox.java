@@ -17,6 +17,11 @@ import app.open_goods.Destination;
 import app.open_goods.messages.client.replies.GenericClientReply;
 import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.replies.OperationStatusReply.Status;
+import app.toolbox.messages.ClosePoll;
+import app.toolbox.messages.CreatePoll;
+import app.toolbox.messages.DiscreteVote;
+import app.toolbox.messages.NumericVote;
+import app.toolbox.messages.Vote;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import consensus.PBFTProtocol;
@@ -119,12 +124,9 @@ public class Toolbox extends GenericProtocol {
 
         var operation = WriteOperation.fromBytes(notif.getRequest().getOperation());
         switch (operation.getId()) {
-            //TODO: pollmessgs
-            /* case IssueOffer.MESSAGE_ID -> handleExecutedIssueOffer((IssueOffer) operation);
-            case IssueWant.MESSAGE_ID -> handleExecutedIssueWant((IssueWant) operation);
-            case Cancel.MESSAGE_ID -> handleExecutedCancel((Cancel) operation);
-            case Deposit.MESSAGE_ID -> handleExecutedDeposit((Deposit) operation);
-            case Withdrawal.MESSAGE_ID -> handleExecutedWithdrawal((Withdrawal) operation); */
+            case ClosePoll.MESSAGE_ID -> handleExecutedClosePoll((ClosePoll) operation);
+            case CreatePoll.MESSAGE_ID -> handleExecutedCreatePoll((CreatePoll) operation);
+            case Vote.MESSAGE_ID -> handleExecutedVote((Vote) operation);
             default -> logger.error("Received unknown operation for open goods market");
         }
 
@@ -133,6 +135,16 @@ public class Toolbox extends GenericProtocol {
     /*
      * CONNECTION EVENTS
      */
+
+    private void handleExecutedClosePoll(ClosePoll operation) {
+
+    }
+
+    private void handleExecutedCreatePoll(CreatePoll operation) {
+    }
+
+    private void handleExecutedVote(Vote operation) {
+    }
 
     private void uponClientConnectionUp(ClientUpEvent event, int channel) {
         logger.debug(event);

@@ -7,7 +7,7 @@ import app.WriteOperation;
 
 public class ClosePoll extends WriteOperation{
 
-    public final static short MESSAGE_ID = 102;
+    public final static short MESSAGE_ID = 101;
 
     private final UUID rid;
     private final PublicKey clientID;

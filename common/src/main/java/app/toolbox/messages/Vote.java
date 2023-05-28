@@ -5,7 +5,7 @@ import app.WriteOperation;
 
 public class Vote extends WriteOperation {
 
-    public final static short MESSAGE_ID = 102;
+    public final static short MESSAGE_ID = 103;
 
     protected final UUID rid;
     protected final UUID pollID;

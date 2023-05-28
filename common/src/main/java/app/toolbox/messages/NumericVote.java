@@ -3,6 +3,7 @@ package app.toolbox.messages;
 import java.util.UUID;
 
 public class NumericVote extends Vote{
+    public final static short MESSAGE_ID = 104;
 
     private final double value;
 

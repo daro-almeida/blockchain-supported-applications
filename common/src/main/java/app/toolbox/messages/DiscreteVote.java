@@ -3,6 +3,7 @@ package app.toolbox.messages;
 import java.util.UUID;
 
 public class DiscreteVote extends Vote {
+    public final static short MESSAGE_ID = 103;
 
     private final String value;
 
