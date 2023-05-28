@@ -1,38 +1,30 @@
 package app.toolbox.messages;
 
-import java.io.IOException;
+import java.util.UUID;
+import app.WriteOperation;
 
-import io.netty.buffer.ByteBuf;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
-
-public class Vote extends SignedProtoMessage {
+public class Vote extends WriteOperation {
 
     public final static short MESSAGE_ID = 102;
 
-    public Vote(){
+    protected final UUID rid;
+    protected final UUID pollID;
+
+    public Vote(UUID rid, UUID pollID){
         super(Vote.MESSAGE_ID);
+
+        this.rid = rid;
+        this.pollID = pollID;
+    }
+
+    public UUID getRid() {
+        return rid;
+    }
+
+    public UUID getPollID() {
+        return pollID;
     }
 
 
-    public static final SignedMessageSerializer<Vote> serializer = new SignedMessageSerializer<>() {
-
-        @Override
-        public Vote deserializeBody(ByteBuf arg0) throws IOException {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'deserializeBody'");
-        }
-
-        @Override
-        public void serializeBody(Vote arg0, ByteBuf arg1) throws IOException {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'serializeBody'");
-        }
-    };
-
-    @Override
-    public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-        return Vote.serializer;
-    }
 
 }

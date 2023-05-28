@@ -1,35 +1,40 @@
 package app.toolbox.messages;
 
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
-import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+import java.security.PublicKey;
+import java.util.UUID;
 
-public class ClosePoll extends SignedProtoMessage{
+import app.WriteOperation;
+
+public class ClosePoll extends WriteOperation{
 
     public final static short MESSAGE_ID = 102;
 
-    public ClosePoll(){
+    private final UUID rid;
+    private final PublicKey clientID;
+    private final UUID pollID;
+
+
+    public ClosePoll(UUID rid, PublicKey pk, UUID pollID){
         super(ClosePoll.MESSAGE_ID);
+
+        this.rid = rid;
+        this.clientID = pk;
+        this.pollID = pollID;
     }
 
 
-    public static final SignedMessageSerializer<ClosePoll> serializer = new SignedMessageSerializer<>() {
+    public UUID getRid() {
+        return rid;
+    }
 
-        @Override
-        public ClosePoll deserializeBody(ByteBuf arg0) throws IOException {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'deserializeBody'");
-        }
 
-        @Override
-        public void serializeBody(ClosePoll arg0, ByteBuf arg1) throws IOException {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'serializeBody'");
-        }
-    };
+    public PublicKey getClientID() {
+        return clientID;
+    }
 
-    @Override
-    public SignedMessageSerializer<? extends SignedProtoMessage> getSerializer() {
-        return ClosePoll.serializer;
+
+    public UUID getPollID() {
+        return pollID;
     }
 
     
