@@ -1,6 +1,6 @@
 package app.open_goods.messages.exchange.requests;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
@@ -21,14 +21,14 @@ public class Deposit extends WriteOperation {
 	private final float amount;
 	
 	public Deposit(PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
+		super(Deposit.MESSAGE_ID);
 		this.rid = UUID.randomUUID();
 		this.clientID = cID;
 		this.amount = a;	
 	}
 
 	private Deposit(UUID rid, PublicKey cID, float a) {
-		super(Deposit.MESSAGE_ID, OperationType.DEPOSIT);
+		super(Deposit.MESSAGE_ID);
 		this.rid = rid;
 		this.clientID = cID;
 		this.amount = a;	

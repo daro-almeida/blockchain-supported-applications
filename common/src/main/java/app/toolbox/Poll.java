@@ -2,15 +2,15 @@ package app.toolbox;
 
 public abstract class Poll {
     
-    public enum PollStatus {OPEN, CLOSED};
+    public enum Authorization {OPEN, CLOSED};
     // TODO in case it is closed, some form to allow the validation that a user is
     // allowed to participate in the poll.
     private final String description;
     private final int range;
     private final int nParticipants;
-    private PollStatus status;
+    private Authorization status;
 
-    public Poll(String description, int range, int nParticipants, PollStatus status) {
+    public Poll(String description, int range, int nParticipants, Authorization status) {
         this.description = description;
         this.range = range;
         this.nParticipants = nParticipants;
@@ -29,11 +29,11 @@ public abstract class Poll {
         return nParticipants;
     }
 
-    public PollStatus getStatus() {
+    public Authorization getStatus() {
         return status;
     }
 
-    public void setStatus(PollStatus status) {
+    public void setStatus(Authorization status) {
         this.status = status;
     }
 }

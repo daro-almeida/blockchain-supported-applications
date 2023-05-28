@@ -1,6 +1,6 @@
 package app.open_goods;
 
-import app.open_goods.messages.WriteOperation;
+import app.WriteOperation;
 import app.open_goods.messages.client.replies.GenericClientReply;
 import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.replies.OperationStatusReply.Status;
@@ -223,13 +223,13 @@ public class OpenGoodsMarket extends GenericProtocol {
                 opStatus.get(notif.getRequest().getRequestId()) == null);
 
         var operation = WriteOperation.fromBytes(notif.getRequest().getOperation());
-        switch(operation.getType()) {
-            case ISSUE_OFFER -> handleExecutedIssueOffer((IssueOffer) operation);
-            case ISSUE_WANT -> handleExecutedIssueWant((IssueWant) operation);
-            case CANCEL -> handleExecutedCancel((Cancel) operation);
-            case DEPOSIT -> handleExecutedDeposit((Deposit) operation);
-            case WITHDRAWAL -> handleExecutedWithdrawal((Withdrawal) operation);
-            default -> logger.error("Received unknown operation type");
+        switch(operation.getId()) {
+            case IssueOffer.MESSAGE_ID -> handleExecutedIssueOffer((IssueOffer) operation);
+            case IssueWant.MESSAGE_ID -> handleExecutedIssueWant((IssueWant) operation);
+            case Cancel.MESSAGE_ID -> handleExecutedCancel((Cancel) operation);
+            case Deposit.MESSAGE_ID -> handleExecutedDeposit((Deposit) operation);
+            case Withdrawal.MESSAGE_ID -> handleExecutedWithdrawal((Withdrawal) operation);
+            default -> logger.error("Received unknown operation for open goods market");
         }
     }
 
