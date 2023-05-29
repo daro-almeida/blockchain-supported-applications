@@ -1,7 +1,5 @@
 package blockchain.requests;
 
-import blockchain.messages.RedirectClientRequestMessage;
-
 public class PendingRequest {
 
     public final ClientRequest request;

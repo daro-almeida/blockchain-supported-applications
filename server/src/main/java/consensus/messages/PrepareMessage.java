@@ -1,13 +1,13 @@
 package consensus.messages;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Objects;
-
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
 import utils.Utils;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Objects;
 
 public class PrepareMessage extends SignedProtoMessage {
 

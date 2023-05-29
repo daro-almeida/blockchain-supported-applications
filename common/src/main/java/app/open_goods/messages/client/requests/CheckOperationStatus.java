@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.network.ISerializer;
 
-import java.io.IOException;
 import java.util.UUID;
 
 public class CheckOperationStatus extends ProtoMessage {

@@ -1,46 +1,28 @@
 package app.toolbox;
 
-import java.io.IOException;
-import java.security.PublicKey;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.UUID;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
+import app.BlockChainApplication;
 import app.WriteOperation;
-import app.open_goods.Destination;
-import app.open_goods.messages.client.replies.GenericClientReply;
-import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.replies.OperationStatusReply.Status;
 import app.toolbox.messages.ClosePoll;
 import app.toolbox.messages.CreatePoll;
-import app.toolbox.messages.DiscreteVote;
-import app.toolbox.messages.NumericVote;
 import app.toolbox.messages.Vote;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import consensus.PBFTProtocol;
 import metrics.Metrics;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
-import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.SimpleServerChannel;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ClientDownEvent;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ClientUpEvent;
-import utils.Crypto;
+import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Utils;
 
-public class Toolbox extends GenericProtocol {
+import java.io.IOException;
+import java.util.*;
+
+public class Toolbox extends BlockChainApplication {
 
     private static final Logger logger = LogManager.getLogger(Toolbox.class);
-
-    public static final String ADDRESS_KEY = "address";
-    public static final String SERVER_PORT_KEY = "client_server_port";
 
     public final static String PROTO_NAME = "Toolbox";
     public final static short PROTO_ID = 600;
@@ -49,14 +31,7 @@ public class Toolbox extends GenericProtocol {
     private final Map<UUID, Poll> polls = new HashMap<>();
 
     // TODO: change votes uuid to cote obj.
-    private final Map<UUID, Set<UUID>> votes = new HashMap<>();
-
-    // to send reply later
-    private final Map<UUID, Destination> reqDestinations = new HashMap<>();
-
-    private final Map<UUID, OperationStatusReply.Status> opStatus = new HashMap<>();
-
-    private int clientChannel;
+    private final Map<UUID, Set<Vote>> votes = new HashMap<>();
 
     public static void main(String[] args) throws Exception {
         Properties props = Babel.loadConfig(Arrays.copyOfRange(args, 0, args.length), "config.properties");
@@ -86,39 +61,41 @@ public class Toolbox extends GenericProtocol {
 
         babel.start();
 
-        logger.info("Running OpenGoodsMarket");
+        logger.info("Running Toolbox");
     }
 
     public Toolbox(Properties props) {
-        super(PROTO_NAME, PROTO_ID);
+        super(PROTO_NAME, PROTO_ID, logger);
     }
 
     @Override
     public void init(Properties props) throws HandlerRegistrationException, IOException {
-        Properties serverProps = new Properties();
-        serverProps.put(SimpleServerChannel.ADDRESS_KEY, props.getProperty(ADDRESS_KEY));
-        serverProps.setProperty(SimpleServerChannel.PORT_KEY, props.getProperty(SERVER_PORT_KEY));
+        super.init(props);
 
-        clientChannel = createChannel(SimpleServerChannel.NAME, serverProps);
-        // register stuff here
+        registerMessageSerializer(clientChannel, CreatePoll.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, Vote.MESSAGE_ID, WriteOperation.serializer);
+        registerMessageSerializer(clientChannel, ClosePoll.MESSAGE_ID, WriteOperation.serializer);
 
-        // registermsgserialzer from clients
+        registerMessageHandler(clientChannel, CreatePoll.MESSAGE_ID, this::handleCreatePoll);
+        registerMessageHandler(clientChannel, Vote.MESSAGE_ID, this::handleVote);
+        registerMessageHandler(clientChannel, ClosePoll.MESSAGE_ID, this::handleClosePoll);
 
-        // handlers
-
-        // Handle exec. operation
-        registerChannelEventHandler(clientChannel, ClientUpEvent.EVENT_ID, this::uponClientConnectionUp);
-        registerChannelEventHandler(clientChannel, ClientDownEvent.EVENT_ID, this::uponClientConnectionDown);
-
-        subscribeNotification(ExecutedOperation.NOTIFICATION_ID, this::handleExecutedOperation);
     }
 
-    /*
-     * NOTIFICATIONS
-     */
+    private void handleCreatePoll(CreatePoll msg, Host host, short protoId, int channelId) {
+        //TODO
+    }
 
-    private void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
+    private void handleVote(Vote msg, Host host, short protoId, int channelId) {
+        //TODO
+    }
 
+    private void handleClosePoll(ClosePoll msg, Host host, short protoId, int channelId) {
+        //TODO
+    }
+
+
+    protected void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
         assert (opStatus.get(notif.getRequest().getRequestId()) == Status.PENDING ||
                 opStatus.get(notif.getRequest().getRequestId()) == null);
 
@@ -129,70 +106,19 @@ public class Toolbox extends GenericProtocol {
             case Vote.MESSAGE_ID -> handleExecutedVote((Vote) operation);
             default -> logger.error("Received unknown operation for open goods market");
         }
-
     }
 
-    /*
-     * CONNECTION EVENTS
-     */
-
-    private void handleExecutedClosePoll(ClosePoll operation) {
-
+    private void handleExecutedClosePoll(ClosePoll closePoll) {
+        //TODO
     }
 
-    private void handleExecutedCreatePoll(CreatePoll operation) {
+    private void handleExecutedCreatePoll(CreatePoll createPoll) {
+        //TODO
     }
 
-    private void handleExecutedVote(Vote operation) {
+    private void handleExecutedVote(Vote vote) {
+        //TODO
     }
 
-    private void uponClientConnectionUp(ClientUpEvent event, int channel) {
-        logger.debug(event);
-    }
-
-    private void uponClientConnectionDown(ClientDownEvent event, int channel) {
-        logger.warn(event);
-    }
-
-    private boolean repeatedOperation(UUID requestId, Destination dest) {
-        if (opStatus.containsKey(requestId) && opStatus.get(requestId) != OperationStatusReply.Status.PENDING) {
-            logger.warn("Repeated operation {}", requestId);
-            opStatus.put(requestId, Status.FAILED);
-            sendStatus(requestId, Status.FAILED, dest);
-            return true;
-        }
-        return false;
-    }
-
-    private void sendStatus(UUID requestId, Status status, Destination dest) {
-        if (dest == null)
-            return;
-        OperationStatusReply statusReply = new OperationStatusReply(requestId, status);
-        sendMessage(clientChannel, statusReply, dest.sourceProto(), dest.host(), 0);
-    }
-
-    private void sendAck(UUID requestId, Destination dest) {
-        assert dest != null;
-        GenericClientReply ack = new GenericClientReply(requestId);
-        sendMessage(clientChannel, ack, dest.sourceProto(), dest.host(), 0);
-    }
-
-    private void changeAndNotifyStatus(UUID requestId, Status status) {
-        opStatus.put(requestId, status);
-        var hostToReply = reqDestinations.get(requestId);
-        if (hostToReply != null) {
-            sendStatus(requestId, status, hostToReply);
-            reqDestinations.remove(requestId);
-        }
-    }
-
-    private boolean authenticatedOperation(WriteOperation op, UUID requestId, PublicKey key, Destination dest) {
-        if (!Crypto.checkSignature(op, key)) {
-            logger.warn("Invalid signature in operation from client {}", dest.host());
-            opStatus.put(requestId, Status.REJECTED);
-            sendStatus(requestId, Status.REJECTED, dest);
-            return false;
-        }
-        return true;
-    }
+    // TODO validate methods for each msg
 }

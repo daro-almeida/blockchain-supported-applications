@@ -1,9 +1,9 @@
 package app.open_goods.timers;
 
-import java.util.UUID;
-
 import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
+
+import java.util.UUID;
 
 public class ExpiredOperation extends ProtoTimer {
 	

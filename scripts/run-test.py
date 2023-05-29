@@ -1,8 +1,8 @@
+import argparse
+import json
 import os
 import subprocess
-import argparse
 import time
-import json
 
 server_server_base_port = 5000
 client_server_base_port = 6000

@@ -1,8 +1,8 @@
 package app.open_goods.timers;
 
-import java.util.UUID;
-
 import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
+
+import java.util.UUID;
 
 public class NextCheck extends ProtoTimer {
 	

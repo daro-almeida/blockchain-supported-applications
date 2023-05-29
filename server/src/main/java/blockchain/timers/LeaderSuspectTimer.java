@@ -1,7 +1,5 @@
 package blockchain.timers;
 
-import java.util.UUID;
-
 import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
 
 public class LeaderSuspectTimer extends ProtoTimer {

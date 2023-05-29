@@ -1,10 +1,5 @@
 package consensus.messages;
 
-import java.io.*;
-import java.security.*;
-import java.util.Arrays;
-import java.util.Objects;
-
 import consensus.requests.ProposeRequest;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -13,6 +8,11 @@ import pt.unl.fct.di.novasys.babel.generic.ProtoMessage;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.SignaturesHelper;
 import utils.Utils;
+
+import java.io.IOException;
+import java.security.*;
+import java.util.Arrays;
+import java.util.Objects;
 
 public class PrePrepareMessage extends ProtoMessage {
 

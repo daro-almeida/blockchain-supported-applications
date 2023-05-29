@@ -10,8 +10,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.*;
 import java.security.cert.CertificateException;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
 import java.util.Properties;
 
 public class Crypto {
@@ -40,19 +38,6 @@ public class Crypto {
         }
 
         return (PrivateKey) ks.getKey(me, keyStorePassword);
-    }
-
-    public static PublicKey getPublicKeyFromBytes(byte[] publicKeyBytes) {
-        try {
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-
-            // create an instance of the X509EncodedKeySpec class using the encoded bytes of the public key
-            X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-            // create an instance of the PublicKey interface using the KeyFactory and the X509EncodedKeySpec
-            return keyFactory.generatePublic(publicKeySpec);
-        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     public static KeyStore getTruststore(Properties props) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {

@@ -1,30 +1,24 @@
 package app.open_goods;
 
+import app.BlockChainApplication;
 import app.WriteOperation;
-import app.open_goods.messages.client.replies.GenericClientReply;
 import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.replies.OperationStatusReply.Status;
 import app.open_goods.messages.client.requests.Cancel;
-import app.open_goods.messages.client.requests.CheckOperationStatus;
 import app.open_goods.messages.client.requests.IssueOffer;
 import app.open_goods.messages.client.requests.IssueWant;
 import app.open_goods.messages.exchange.requests.Deposit;
 import app.open_goods.messages.exchange.requests.Withdrawal;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
-import blockchain.requests.ClientRequest;
 import consensus.PBFTProtocol;
 import metrics.Metrics;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
-import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
 import pt.unl.fct.di.novasys.babel.exceptions.InvalidParameterException;
 import pt.unl.fct.di.novasys.babel.exceptions.ProtocolAlreadyExistsException;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.SimpleServerChannel;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ClientDownEvent;
-import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ClientUpEvent;
 import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Crypto;
 import utils.Utils;
@@ -37,26 +31,17 @@ import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.util.*;
 
-public class OpenGoodsMarket extends GenericProtocol {
+public class OpenGoodsMarket extends BlockChainApplication {
 
     private static final Logger logger = LogManager.getLogger(OpenGoodsMarket.class);
-
-    public static final String ADDRESS_KEY = "address";
-    public static final String SERVER_PORT_KEY = "client_server_port";
 
     public final static String PROTO_NAME = "OpenGoodsMarket";
     public final static short PROTO_ID = 500;
 
-    private int clientChannel;
     private final PublicKey exchangeKey;
-
-    private final Map<UUID, OperationStatusReply.Status> opStatus = new HashMap<>();
 
     // key = target request ID
     private final Map<UUID, Cancel> unmatchedCancels = new HashMap<>();
-    // to send reply later
-    private final Map<UUID, Destination> reqDestinations = new HashMap<>();
-
     private final CSDWallets csdWallets = new CSDWallets();
 
     // key = resourceType
@@ -101,17 +86,13 @@ public class OpenGoodsMarket extends GenericProtocol {
     }
 
     public OpenGoodsMarket(Properties props) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
-        super(OpenGoodsMarket.PROTO_NAME, OpenGoodsMarket.PROTO_ID);
+        super(OpenGoodsMarket.PROTO_NAME, OpenGoodsMarket.PROTO_ID, logger);
         this.exchangeKey = Crypto.getTruststore(props).getCertificate("exchange").getPublicKey();
     }
 
     @Override
     public void init(Properties props) throws HandlerRegistrationException, IOException {
-        Properties serverProps = new Properties();
-        serverProps.put(SimpleServerChannel.ADDRESS_KEY, props.getProperty(ADDRESS_KEY));
-        serverProps.setProperty(SimpleServerChannel.PORT_KEY, props.getProperty(SERVER_PORT_KEY));
-
-        clientChannel = createChannel(SimpleServerChannel.NAME, serverProps);
+        super.init(props);
 
         registerMessageSerializer(clientChannel, IssueOffer.MESSAGE_ID, WriteOperation.serializer);
         registerMessageSerializer(clientChannel, IssueWant.MESSAGE_ID, WriteOperation.serializer);
@@ -119,21 +100,11 @@ public class OpenGoodsMarket extends GenericProtocol {
         registerMessageSerializer(clientChannel, Deposit.MESSAGE_ID, WriteOperation.serializer);
         registerMessageSerializer(clientChannel, Withdrawal.MESSAGE_ID, WriteOperation.serializer);
 
-        registerMessageSerializer(clientChannel, CheckOperationStatus.MESSAGE_ID, CheckOperationStatus.serializer);
-        registerMessageSerializer(clientChannel, OperationStatusReply.MESSAGE_ID, OperationStatusReply.serializer);
-        registerMessageSerializer(clientChannel, GenericClientReply.MESSAGE_ID, GenericClientReply.serializer);
-
         registerMessageHandler(clientChannel, IssueOffer.MESSAGE_ID, this::handleIssueOfferMessage);
         registerMessageHandler(clientChannel, IssueWant.MESSAGE_ID, this::handleIssueWantMessage);
         registerMessageHandler(clientChannel, Cancel.MESSAGE_ID, this::handleCancelMessage);
-        registerMessageHandler(clientChannel, CheckOperationStatus.MESSAGE_ID, this::handleCheckOperationStatusMessage);
         registerMessageHandler(clientChannel, Deposit.MESSAGE_ID, this::handleDepositMessage);
         registerMessageHandler(clientChannel, Withdrawal.MESSAGE_ID, this::handleWithdrawalMessage);
-
-        registerChannelEventHandler(clientChannel, ClientUpEvent.EVENT_ID, this::uponClientConnectionUp);
-        registerChannelEventHandler(clientChannel, ClientDownEvent.EVENT_ID, this::uponClientConnectionDown);
-
-        subscribeNotification(ExecutedOperation.NOTIFICATION_ID, this::handleExecutedOperation);
     }
 
     /*
@@ -170,29 +141,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         submitOperation(c.getrID(), c.getBytes(), c.getSignature(), c.getcID(), dest);
     }
 
-    public void handleCheckOperationStatusMessage(CheckOperationStatus cos, Host from, short sourceProto,
-            int channelID) {
-        logger.debug("Received CheckOperationStatus ({} from client {})", cos.getrID(), from);
 
-        OperationStatusReply osr;
-
-        Status s = opStatus.get(cos.getrID());
-
-        if (s != null) {
-            osr = switch (s) {
-                case CANCELLED -> new OperationStatusReply(cos.getrID(), Status.CANCELLED);
-                case EXECUTED -> new OperationStatusReply(cos.getrID(), Status.EXECUTED);
-                case FAILED -> new OperationStatusReply(cos.getrID(), Status.FAILED);
-                case PENDING -> new OperationStatusReply(cos.getrID(), Status.PENDING);
-                case REJECTED -> new OperationStatusReply(cos.getrID(), Status.REJECTED);
-                default -> new OperationStatusReply(cos.getrID(), Status.UNKNOWN);
-            };
-        } else {
-            osr = new OperationStatusReply(cos.getrID(), Status.UNKNOWN);
-        }
-
-        sendMessage(clientChannel, osr, sourceProto, from, 0);
-    }
 
     public void handleDepositMessage(Deposit d, Host from, short sourceProto, int channelID) {
         logger.debug("Received deposit of " + d.getAmount() + " from exchange (" + from + ")");
@@ -214,11 +163,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         submitOperation(w.getRid(), w.getBytes(), w.getSignature(), exchangeKey, dest);
     }
 
-    /*
-     * NOTIFICATIONS
-     */
-
-    private void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
+    protected void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
         assert (opStatus.get(notif.getRequest().getRequestId()) == Status.PENDING ||
                 opStatus.get(notif.getRequest().getRequestId()) == null);
 
@@ -379,26 +324,6 @@ public class OpenGoodsMarket extends GenericProtocol {
         changeAndNotifyStatus(w.getRid(), Status.EXECUTED);
     }
 
-    private boolean authenticatedOperation(WriteOperation op, UUID requestId, PublicKey key, Destination dest) {
-        if (!Crypto.checkSignature(op, key)) {
-            logger.warn("Invalid signature in operation from client {}", dest.host());
-            opStatus.put(requestId, Status.REJECTED);
-            sendStatus(requestId, Status.REJECTED, dest);
-            return false;
-        }
-        return true;
-    }
-
-    private boolean repeatedOperation(UUID requestId, Destination dest) {
-        if (opStatus.containsKey(requestId) && opStatus.get(requestId) != OperationStatusReply.Status.PENDING) {
-            logger.warn("Repeated operation {}", requestId);
-            opStatus.put(requestId, Status.FAILED);
-            sendStatus(requestId, Status.FAILED, dest);
-            return true;
-        }
-        return false;
-    }
-
     private boolean validateIssueOffer(IssueOffer io, Destination dest) {
         if (repeatedOperation(io.getRid(), dest))
             return false;
@@ -521,14 +446,7 @@ public class OpenGoodsMarket extends GenericProtocol {
         return true;
     }
 
-    private void submitOperation(UUID requestId, byte[] opBytes, byte[] signature, PublicKey clientId, Destination dest) {
-        var req = new ClientRequest(requestId, opBytes, signature, clientId);
-        sendRequest(req, BlockChainProtocol.PROTO_ID);
-        opStatus.put(requestId, Status.PENDING);
-        reqDestinations.put(requestId, dest);
 
-        sendAck(requestId, reqDestinations.get(requestId));
-    }
 
     private boolean preCancelled(UUID requestId, PublicKey clientId) {
         boolean doCancel = false;
@@ -567,38 +485,5 @@ public class OpenGoodsMarket extends GenericProtocol {
         csdWallets.increaseBalance(offer.getClientId(), buyAmount * offerPrice);
         csdWallets.decreaseBalance(want.getClientId(), buyAmount * offerPrice);
         return true;
-    }
-
-    private void sendAck(UUID requestId, Destination dest) {
-        assert dest != null;
-        GenericClientReply ack = new GenericClientReply(requestId);
-        sendMessage(clientChannel, ack, dest.sourceProto(), dest.host(), 0);
-    }
-
-    private void changeAndNotifyStatus(UUID requestId, Status status) {
-        opStatus.put(requestId, status);
-        var hostToReply = reqDestinations.get(requestId);
-        if (hostToReply != null) {
-            sendStatus(requestId, status, hostToReply);
-            reqDestinations.remove(requestId);
-        }
-    }
-    private void sendStatus(UUID requestId, Status status, Destination dest) {
-        if (dest == null)
-            return;
-        OperationStatusReply statusReply = new OperationStatusReply(requestId, status);
-        sendMessage(clientChannel, statusReply, dest.sourceProto(), dest.host(), 0);
-    }
-
-    /*
-     * CONNECTION EVENTS
-     */
-
-    private void uponClientConnectionUp(ClientUpEvent event, int channel) {
-        logger.debug(event);
-    }
-
-    private void uponClientConnectionDown(ClientDownEvent event, int channel) {
-        logger.warn(event);
     }
 }

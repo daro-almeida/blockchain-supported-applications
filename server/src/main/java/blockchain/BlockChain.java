@@ -1,11 +1,11 @@
 package blockchain;
 
-import java.util.*;
-
 import blockchain.requests.ClientRequest;
 import metrics.Metrics;
 import utils.Crypto;
 import utils.Utils;
+
+import java.util.*;
 
 public class BlockChain {
 

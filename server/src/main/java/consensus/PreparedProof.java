@@ -3,8 +3,6 @@ package consensus;
 import consensus.messages.PrePrepareMessage;
 import consensus.messages.PrepareMessage;
 import io.netty.buffer.ByteBuf;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
 

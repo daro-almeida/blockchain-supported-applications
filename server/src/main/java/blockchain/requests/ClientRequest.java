@@ -1,12 +1,5 @@
 package blockchain.requests;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.util.Objects;
-import java.util.UUID;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -15,6 +8,12 @@ import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Crypto;
 import utils.SignaturesHelper;
 import utils.Utils;
+
+import java.io.IOException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.util.Objects;
+import java.util.UUID;
 
 public class ClientRequest extends ProtoRequest {
 
@@ -91,7 +90,7 @@ public class ClientRequest extends ProtoRequest {
 		public void serialize(ClientRequest request, ByteBuf out) throws IOException {
 			Utils.uuidSerializer.serialize(request.requestId, out);
 			Utils.byteArraySerializer.serialize(request.operation, out);
-			Utils.byteArraySerializer.serialize(request.publicKey.getEncoded(), out);
+			Utils.rsaPublicKeySerializer.serialize(request.publicKey, out);
 			Utils.byteArraySerializer.serialize(request.signature, out);
 		}
 
@@ -99,9 +98,8 @@ public class ClientRequest extends ProtoRequest {
 		public ClientRequest deserialize(ByteBuf in) throws IOException {
 			UUID requestId = Utils.uuidSerializer.deserialize(in);
 			byte[] operation = Utils.byteArraySerializer.deserialize(in);
-			byte[] publicKeyBytes = Utils.byteArraySerializer.deserialize(in);
+			var publicKey = Utils.rsaPublicKeySerializer.deserialize(in);
 			byte[] signature = Utils.byteArraySerializer.deserialize(in);
-			var publicKey = Crypto.getPublicKeyFromBytes(publicKeyBytes);
 			return new ClientRequest(requestId, operation, signature, publicKey);
 		}
 	};

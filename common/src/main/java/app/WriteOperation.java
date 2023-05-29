@@ -5,6 +5,9 @@ import app.open_goods.messages.client.requests.IssueOffer;
 import app.open_goods.messages.client.requests.IssueWant;
 import app.open_goods.messages.exchange.requests.Deposit;
 import app.open_goods.messages.exchange.requests.Withdrawal;
+import app.toolbox.messages.ClosePoll;
+import app.toolbox.messages.CreatePoll;
+import app.toolbox.messages.Vote;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
@@ -51,6 +54,9 @@ public abstract class WriteOperation extends SignedProtoMessage {
                 case IssueOffer.MESSAGE_ID -> IssueOffer.serializer.serialize((IssueOffer) op, out);
                 case IssueWant.MESSAGE_ID -> IssueWant.serializer.serialize((IssueWant) op, out);
                 case Cancel.MESSAGE_ID -> Cancel.serializer.serialize((Cancel) op, out);
+                case CreatePoll.MESSAGE_ID -> CreatePoll.serializer.serialize((CreatePoll) op, out);
+                case Vote.MESSAGE_ID -> Vote.serializer.serialize((Vote) op, out);
+                case ClosePoll.MESSAGE_ID -> ClosePoll.serializer.serialize((ClosePoll) op, out);
                 default -> throw new RuntimeException("Unknown message type");
             }
         }
@@ -63,6 +69,9 @@ public abstract class WriteOperation extends SignedProtoMessage {
                 case IssueOffer.MESSAGE_ID -> IssueOffer.serializer.deserialize(in);
                 case IssueWant.MESSAGE_ID -> IssueWant.serializer.deserialize(in);
                 case Cancel.MESSAGE_ID -> Cancel.serializer.deserialize(in);
+                case CreatePoll.MESSAGE_ID -> CreatePoll.serializer.deserialize(in);
+                case Vote.MESSAGE_ID -> Vote.serializer.deserialize(in);
+                case ClosePoll.MESSAGE_ID -> ClosePoll.serializer.deserialize(in);
                 default -> throw new RuntimeException("Unknown message type");
             };
         }

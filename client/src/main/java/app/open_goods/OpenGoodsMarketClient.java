@@ -1,35 +1,6 @@
 package app.open_goods;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.security.GeneralSecurityException;
-import java.security.InvalidKeyException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.SignatureException;
-import java.security.UnrecoverableKeyException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Properties;
-import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-
 import app.WriteOperation;
-import app.open_goods.timers.NextOperation;
-import metrics.Metrics;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import app.open_goods.messages.client.replies.GenericClientReply;
 import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.requests.Cancel;
@@ -40,7 +11,11 @@ import app.open_goods.messages.exchange.requests.Deposit;
 import app.open_goods.messages.exchange.requests.Withdrawal;
 import app.open_goods.timers.ExpiredOperation;
 import app.open_goods.timers.NextCheck;
+import app.open_goods.timers.NextOperation;
 import io.netty.channel.EventLoopGroup;
+import metrics.Metrics;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
 import pt.unl.fct.di.novasys.babel.core.GenericProtocol;
 import pt.unl.fct.di.novasys.babel.exceptions.HandlerRegistrationException;
@@ -54,6 +29,16 @@ import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ServerFailedEvent
 import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ServerUpEvent;
 import pt.unl.fct.di.novasys.network.NetworkManager;
 import pt.unl.fct.di.novasys.network.data.Host;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.security.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class OpenGoodsMarketClient {
 

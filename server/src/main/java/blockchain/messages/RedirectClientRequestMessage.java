@@ -4,7 +4,6 @@ import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
-import utils.Utils;
 
 import java.io.IOException;
 

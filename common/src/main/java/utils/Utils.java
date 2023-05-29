@@ -10,6 +10,11 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Enumeration;
 import java.util.UUID;
 
@@ -63,6 +68,31 @@ public class Utils {
             var mostSigBits = byteBuf.readLong();
             var leastSigBits = byteBuf.readLong();
             return new UUID(mostSigBits, leastSigBits);
+        }
+    };
+
+    public static ISerializer<PublicKey> rsaPublicKeySerializer = new ISerializer<>() {
+        @Override
+        public void serialize(PublicKey publicKey, ByteBuf byteBuf) throws IOException {
+            byte[] encoded = publicKey.getEncoded();
+            byteBuf.writeInt(encoded.length);
+            byteBuf.writeBytes(encoded);
+        }
+
+        @Override
+        public PublicKey deserialize(ByteBuf byteBuf) throws IOException {
+            int length = byteBuf.readInt();
+            byte[] publicKeyBytes = new byte[length];
+            try {
+                KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
+                // create an instance of the X509EncodedKeySpec class using the encoded bytes of the public key
+                X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(publicKeyBytes);
+                // create an instance of the PublicKey interface using the KeyFactory and the X509EncodedKeySpec
+                return keyFactory.generatePublic(publicKeySpec);
+            } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+                throw new RuntimeException(e);
+            }
         }
     };
 

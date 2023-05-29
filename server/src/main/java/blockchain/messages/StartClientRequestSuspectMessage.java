@@ -1,6 +1,5 @@
 package blockchain.messages;
 
-import blockchain.requests.ClientRequest;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedMessageSerializer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;
@@ -11,7 +10,6 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class StartClientRequestSuspectMessage extends SignedProtoMessage {
 
