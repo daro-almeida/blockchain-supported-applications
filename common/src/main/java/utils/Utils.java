@@ -83,6 +83,7 @@ public class Utils {
         public PublicKey deserialize(ByteBuf byteBuf) throws IOException {
             int length = byteBuf.readInt();
             byte[] publicKeyBytes = new byte[length];
+            byteBuf.readBytes(publicKeyBytes);
             try {
                 KeyFactory keyFactory = KeyFactory.getInstance("RSA");
 

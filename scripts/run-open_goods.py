@@ -36,7 +36,7 @@ def run_replicas(num: int, ops_block: int, ignore_request_block: dict, invalid_b
 
             "java", "-Xmx8G", "-ea",
             "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=node{i}",
-            "-jar", "server.jar",
+            "-cp", "server.jar", "app.open_goods.OpenGoodsMarket",
             f"id={i}",
             f"server_server_port={server_server_base_port + i}",
             f"client_server_port={client_server_base_port + i}",
@@ -75,9 +75,10 @@ def run_clients(num: int, ops_sec: int, folder: str):
 
         "java", "-ea",
         "-Dlog4j.configurationFile=log4j2.xml", f"-DlogFilename=clients",
-        "-jar", "clients.jar",
+        "-cp", "clients.jar", "app.open_goods.OpenGoodsMarketClient",
         f"clients={num}",
         "metrics_name=clients",
+        "server_proto=500",
         f"ops_sec={ops_sec}",
         f"metrics_folder={folder}"
     ]
@@ -98,7 +99,7 @@ if '__main__' == __name__:
     parser.add_argument("-c", "--clients", type=int, default=16, help="Number of clients")
     parser.add_argument("-d", "--duration", type=int, default=0, help="Duration of the test in seconds, if 0 wait for Enter press")
     parser.add_argument("-o", "--ops_sec", type=int, default=10, help="Number of operations per second per client")
-    parser.add_argument("-b", "--ops_per_block", type=int, default=0, help="Number of operations per block")
+    parser.add_argument("-b", "--ops_per_block", type=int, default=50, help="Number of operations per block")
     parser.add_argument("-f", "--folder", type=str, default="metrics/results/", help="Folder to store metrics")
     parser.add_argument("-ir", "--ignore_request_block", type=json.loads, default={}, help="JSON map format. Key is replica id, value is block number to ignore requests (as leader) from other replicas. Example: '{\"1\": 10, \"2\": 50}'")
     parser.add_argument("-ib", "--invalid_block", type=int, default=-1, help="Block number to send invalid block to other replicas (as leader) (only for replica 1)")

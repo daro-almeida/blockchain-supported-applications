@@ -9,33 +9,22 @@ import java.io.IOException;
 import java.security.PublicKey;
 import java.util.UUID;
 
-public class DiscreteVote extends Vote {
+public class DiscreteVote extends Vote<Integer> {
 
-    private final String value;
-
-    public DiscreteVote(UUID rid, PublicKey clientID, UUID pollID, String value){
-        super(Poll.Type.DISCRETE, rid, clientID, pollID);
-        this.value = value;
+    public DiscreteVote(UUID rid, PublicKey clientID, UUID pollID, int valueIndex){
+        super(Poll.Type.DISCRETE, rid, clientID, pollID, valueIndex);
     }
 
-    public String getValue() {
-        return value;
-    }
-
-    public static final ISerializer<DiscreteVote> serializer = new ISerializer<>() {
+    public static final ISerializer<Integer> valueSerializer = new ISerializer<>() {
 
         @Override
-        public void serialize(DiscreteVote vote, ByteBuf byteBuf) throws IOException {
-            Utils.stringSerializer.serialize(vote.value, byteBuf);
+        public void serialize(Integer value, ByteBuf byteBuf) throws IOException {
+            byteBuf.writeInt(value);
         }
 
         @Override
-        public DiscreteVote deserialize(ByteBuf byteBuf) throws IOException {
-            UUID rid = Utils.uuidSerializer.deserialize(byteBuf);
-            PublicKey clientID = Utils.rsaPublicKeySerializer.deserialize(byteBuf);
-            UUID pollID = Utils.uuidSerializer.deserialize(byteBuf);
-            String value = Utils.stringSerializer.deserialize(byteBuf);
-            return new DiscreteVote(rid, clientID, pollID, value);
+        public Integer deserialize(ByteBuf byteBuf) throws IOException {
+            return byteBuf.readInt();
         }
     };
 }

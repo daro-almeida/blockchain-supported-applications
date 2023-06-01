@@ -1,5 +1,6 @@
 package app.toolbox;
 
+import app.toolbox.messages.Vote;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Utils;
@@ -34,10 +35,9 @@ public class NumericPoll extends Poll{
     }
 
     @Override
-    public boolean validVote(Object vote) {
+    public boolean validVote(Vote<?> vote) {
         // vote should be double
-        if (vote instanceof Double) {
-            double voteDouble = (double) vote;
+        if (vote.getValue() instanceof Double voteDouble) {
             return voteDouble >= min && voteDouble <= max;
         }
         return false;
@@ -52,7 +52,7 @@ public class NumericPoll extends Poll{
 
         @Override
         public NumericPoll deserialize(ByteBuf in) throws IOException {
-            Authorization authorization = Authorization.valueOf(in.readShort());
+            Authorization authorization = Authorization.valueOf(in.readByte());
             String description = Utils.stringSerializer.deserialize(in);
             int maxParticipants = in.readInt();
             Set<PublicKey> authorized = null;

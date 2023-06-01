@@ -1,11 +1,13 @@
 package app.toolbox;
 
+import app.toolbox.messages.Vote;
 import io.netty.buffer.ByteBuf;
 import pt.unl.fct.di.novasys.network.ISerializer;
 import utils.Utils;
 
 import java.io.IOException;
 import java.security.PublicKey;
+import java.util.Collections;
 import java.util.Set;
 
 public abstract class Poll {
@@ -36,15 +38,14 @@ public abstract class Poll {
         this.description = description;
         this.maxParticipants = maxParticipants;
         this.authorized = authorized;
-        this.authorization = Authorization.CLOSED;
+        if (authorized.isEmpty())
+            this.authorization = Authorization.OPEN;
+        else
+            this.authorization = Authorization.CLOSED;
     }
 
     protected Poll(Type type, String description, int maxParticipants) {
-        this.type = type;
-        this.description = description;
-        this.maxParticipants = maxParticipants;
-        this.authorized = null;
-        this.authorization = Authorization.OPEN;
+        this(type, description, maxParticipants, Collections.emptySet());
     }
 
     public String getDescription() {
@@ -55,7 +56,7 @@ public abstract class Poll {
         return maxParticipants;
     }
 
-    public Authorization getauthorization() {
+    public Authorization getAuthorization() {
         return authorization;
     }
 
@@ -67,18 +68,22 @@ public abstract class Poll {
         return type;
     }
 
-    public abstract boolean validVote(Object vote);
+    public abstract boolean validVote(Vote<?> vote);
+
+    public boolean canVote(PublicKey key) {
+        return authorization == Authorization.OPEN || authorized.contains(key);
+    }
 
     public static final ISerializer<Poll> serializer = new ISerializer<>() {
 
         @Override
         public void serialize(Poll poll, ByteBuf byteBuf) throws IOException {
-            byteBuf.writeShort(poll.type.ordinal());
-            byteBuf.writeShort(poll.authorization.ordinal());
+            byteBuf.writeByte(poll.type.ordinal());
+            byteBuf.writeByte(poll.authorization.ordinal());
             Utils.stringSerializer.serialize(poll.description, byteBuf);
             byteBuf.writeInt(poll.maxParticipants);
             if (poll.authorization == Authorization.CLOSED) {
-                assert poll.authorized != null;
+                assert !poll.authorized.isEmpty();
                 byteBuf.writeInt(poll.authorized.size());
                 for (PublicKey key : poll.authorized)
                     Utils.rsaPublicKeySerializer.serialize(key, byteBuf);
@@ -92,7 +97,7 @@ public abstract class Poll {
 
         @Override
         public Poll deserialize(ByteBuf byteBuf) throws IOException {
-            Type type = Type.valueOf(byteBuf.readShort());
+            Type type = Type.valueOf(byteBuf.readByte());
 
             return switch (type) {
                 case NUMERIC -> NumericPoll.serializer.deserialize(byteBuf);

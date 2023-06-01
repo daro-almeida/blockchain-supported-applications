@@ -9,33 +9,22 @@ import java.io.IOException;
 import java.security.PublicKey;
 import java.util.UUID;
 
-public class NumericVote extends Vote{
-
-    private final double value;
+public class NumericVote extends Vote<Double>{
 
     public NumericVote(UUID rid, PublicKey clientID, UUID pollID, double value){
-        super(Poll.Type.NUMERIC, rid, clientID, pollID);
-        this.value = value;
+        super(Poll.Type.NUMERIC, rid, clientID, pollID, value);
     }
 
-    public double getValue() {
-        return value;
-    }
-
-    public static final ISerializer<NumericVote> serializer = new ISerializer<>() {
+    public static final ISerializer<Double> valueSerializer = new ISerializer<>() {
 
         @Override
-        public void serialize(NumericVote vote, ByteBuf byteBuf) throws IOException {
-            byteBuf.writeDouble(vote.value);
+        public void serialize(Double value, ByteBuf byteBuf) throws IOException {
+            byteBuf.writeDouble(value);
         }
 
         @Override
-        public NumericVote deserialize(ByteBuf byteBuf) throws IOException {
-            UUID rid = Utils.uuidSerializer.deserialize(byteBuf);
-            PublicKey clientID = Utils.rsaPublicKeySerializer.deserialize(byteBuf);
-            UUID pollID = Utils.uuidSerializer.deserialize(byteBuf);
-            double value = byteBuf.readDouble();
-            return new NumericVote(rid, clientID, pollID, value);
+        public Double deserialize(ByteBuf byteBuf) throws IOException {
+            return byteBuf.readDouble();
         }
     };
     

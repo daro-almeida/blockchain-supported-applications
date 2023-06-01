@@ -17,7 +17,7 @@ jar files will be placed in the ``deploy`` folders of the submodules ``server`` 
 - Must have ``Docker``and ``Python``.
 ### Single Test
 ```shell
-python3 scripts/run-test.py -h
+python3 scripts/run-open_goods.py -h
 ```
 Provides runtime arguments descriptions.
 ### Multiple Tests

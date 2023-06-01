@@ -3,9 +3,7 @@ package app.toolbox;
 import app.BlockChainApplication;
 import app.WriteOperation;
 import app.open_goods.messages.client.replies.OperationStatusReply.Status;
-import app.toolbox.messages.ClosePoll;
-import app.toolbox.messages.CreatePoll;
-import app.toolbox.messages.Vote;
+import app.toolbox.messages.*;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import consensus.PBFTProtocol;
@@ -79,14 +77,15 @@ public class Toolbox extends BlockChainApplication {
         registerMessageHandler(clientChannel, CreatePoll.MESSAGE_ID, this::handleCreatePoll);
         registerMessageHandler(clientChannel, Vote.MESSAGE_ID, this::handleVote);
         registerMessageHandler(clientChannel, ClosePoll.MESSAGE_ID, this::handleClosePoll);
-
     }
 
     private void handleCreatePoll(CreatePoll msg, Host host, short protoId, int channelId) {
+        logger.info("CreatePoll received id={} description={}", msg.getRid(), msg.getPoll().description);
         //TODO
     }
 
-    private void handleVote(Vote msg, Host host, short protoId, int channelId) {
+    private void handleVote(Vote<?> msg, Host host, short protoId, int channelId) {
+        logger.info("Vote received id={} pollId={} value={}", msg.getRid(), msg.getPollID(), msg.getValue());
         //TODO
     }
 
@@ -103,7 +102,7 @@ public class Toolbox extends BlockChainApplication {
         switch (operation.getId()) {
             case ClosePoll.MESSAGE_ID -> handleExecutedClosePoll((ClosePoll) operation);
             case CreatePoll.MESSAGE_ID -> handleExecutedCreatePoll((CreatePoll) operation);
-            case Vote.MESSAGE_ID -> handleExecutedVote((Vote) operation);
+            case Vote.MESSAGE_ID -> handleExecutedVote((Vote<?>) operation);
             default -> logger.error("Received unknown operation for open goods market");
         }
     }
@@ -116,7 +115,7 @@ public class Toolbox extends BlockChainApplication {
         //TODO
     }
 
-    private void handleExecutedVote(Vote vote) {
+    private void handleExecutedVote(Vote<?> vote) {
         //TODO
     }
 
