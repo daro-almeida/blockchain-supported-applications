@@ -1,13 +1,18 @@
 package app.toolbox;
 
 import app.BlockChainApplication;
+import app.Destination;
+import app.OperationStatusReply;
 import app.WriteOperation;
-import app.open_goods.messages.client.replies.OperationStatusReply.Status;
+import app.OperationStatusReply.Status;
+import app.toolbox.Poll.Type;
 import app.toolbox.messages.*;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import consensus.PBFTProtocol;
 import metrics.Metrics;
+
+import org.apache.commons.lang3.Validate;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
@@ -16,6 +21,7 @@ import pt.unl.fct.di.novasys.network.data.Host;
 import utils.Utils;
 
 import java.io.IOException;
+import java.security.PublicKey;
 import java.util.*;
 
 public class Toolbox extends BlockChainApplication {
@@ -25,10 +31,15 @@ public class Toolbox extends BlockChainApplication {
     public final static String PROTO_NAME = "Toolbox";
     public final static short PROTO_ID = 600;
 
-    // incoming polls
-    private final Map<UUID, Poll> polls = new HashMap<>();
+    // incoming currentPolls
+    private final Map<UUID, Poll> currentPolls = new HashMap<>();
 
-    // TODO: change votes uuid to cote obj.
+    //closedPolls
+    private final Map<UUID, Poll> finishedPolls = new HashMap<>();
+    //quando alguém faz close ou quando o numero de votos é igual ao numero de votos
+
+    private final Map<Poll, PublicKey> pollCreators = new HashMap<>();
+
     private final Map<UUID, Set<Vote>> votes = new HashMap<>();
 
     public static void main(String[] args) throws Exception {
@@ -74,25 +85,43 @@ public class Toolbox extends BlockChainApplication {
         registerMessageSerializer(clientChannel, Vote.MESSAGE_ID, WriteOperation.serializer);
         registerMessageSerializer(clientChannel, ClosePoll.MESSAGE_ID, WriteOperation.serializer);
 
-        registerMessageHandler(clientChannel, CreatePoll.MESSAGE_ID, this::handleCreatePoll);
-        registerMessageHandler(clientChannel, Vote.MESSAGE_ID, this::handleVote);
-        registerMessageHandler(clientChannel, ClosePoll.MESSAGE_ID, this::handleClosePoll);
+        registerMessageHandler(clientChannel, CreatePoll.MESSAGE_ID, this::handleCreatePollMessage);
+        registerMessageHandler(clientChannel, Vote.MESSAGE_ID, this::handleVoteMessage);
+        registerMessageHandler(clientChannel, ClosePoll.MESSAGE_ID, this::handleClosePollMessage);
     }
 
-    private void handleCreatePoll(CreatePoll msg, Host host, short protoId, int channelId) {
+    private void handleCreatePollMessage(CreatePoll msg, Host host, short protoId, int channelId) {
         logger.info("CreatePoll received id={} description={}", msg.getRid(), msg.getPoll().description);
-        //TODO
+        
+        var dest = new Destination(host, protoId);
+        if(!validateCreatePoll(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
+            return;
+        }
+
+        submitOperation(msg.getRid(), msg.getBytes(), msg.getSignature(), msg.getClientID(), dest);
     }
 
-    private void handleVote(Vote<?> msg, Host host, short protoId, int channelId) {
+    private void handleVoteMessage(Vote<?> msg, Host host, short protoId, int channelId) {
         logger.info("Vote received id={} pollId={} value={}", msg.getRid(), msg.getPollID(), msg.getValue());
-        //TODO
+        
+        var dest = new Destination(host, protoId);
+        if(!validateVote(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
+            return;
+        }
+
+        submitOperation(msg.getRid(), msg.getBytes(), msg.getSignature(), msg.getClientID(), dest);
     }
 
-    private void handleClosePoll(ClosePoll msg, Host host, short protoId, int channelId) {
-        //TODO
-    }
+    private void handleClosePollMessage(ClosePoll msg, Host host, short protoId, int channelId) {
+        
+        var dest = new Destination(host, protoId);
+        if(!validateClosePoll(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
+            return;
+        }
 
+        submitOperation(msg.getRid(), msg.getBytes(), msg.getSignature(), msg.getClientID(), dest);
+
+    }
 
     protected void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
         assert (opStatus.get(notif.getRequest().getRequestId()) == Status.PENDING ||
@@ -107,17 +136,128 @@ public class Toolbox extends BlockChainApplication {
         }
     }
 
-    private void handleExecutedClosePoll(ClosePoll closePoll) {
-        //TODO
+    private void handleExecutedCreatePoll(CreatePoll createPoll) {
+        if(!validateCreatePoll(createPoll, reqDestinations.get(createPoll.getRid()))){
+            reqDestinations.remove(createPoll.getRid());
+            return;
+        }
+
+        logger.info("Executed CreatePoll operation: {}", createPoll.getRid());
+        currentPolls.put(createPoll.getRid(), createPoll.getPoll());
+        pollCreators.put(createPoll.getPoll(), createPoll.getClientID());
+
+        changeAndNotifyStatus(createPoll.getRid(), Status.EXECUTED);
+
     }
 
-    private void handleExecutedCreatePoll(CreatePoll createPoll) {
-        //TODO
+    private void handleExecutedClosePoll(ClosePoll closePoll) {
+        if(!validateClosePoll(closePoll, reqDestinations.get(closePoll.getRid()))){
+            reqDestinations.remove(closePoll.getRid());
+            return;
+        }
+
+        logger.info("Executed ClosePoll operation: {}", closePoll.getRid());
+
+        UUID pollID = closePoll.getPollID();
+        Poll poll = currentPolls.get(pollID);
+        finishedPolls.put(pollID, poll);
+
+        currentPolls.remove(pollID);
+        changeAndNotifyStatus(closePoll.getRid(), Status.EXECUTED);
     }
 
     private void handleExecutedVote(Vote<?> vote) {
-        //TODO
+        if(!validateVote(vote, reqDestinations.get(vote.getRid()))){
+            reqDestinations.remove(vote.getRid());
+            return;
+        }
+
+        logger.info("Executed Vote operation: {}", vote.getRid());
+
+        UUID pollID = vote.getPollID();
+        Poll poll = currentPolls.get(pollID);
+
+        votes.get(pollID).add(vote);
+
+        if(votes.get(pollID).size() == poll.getMaxParticipants()){
+            finishedPolls.put(pollID, poll);
+        }
+
+        changeAndNotifyStatus(vote.getRid(), Status.EXECUTED);
+
     }
 
-    // TODO validate methods for each msg
+    private boolean validateCreatePoll(CreatePoll msg, Destination dest) {
+        if(repeatedOperation(msg.getRid(), dest)){
+            return false;
+        }
+
+        boolean failed = false;
+        if( msg.getPoll().maxParticipants <= 0){
+            logger.warn("CreatePoll: Invalid number of participants in {} from client {}", msg.getRid(), dest.host());
+            failed = true;
+        } else if(!msg.getPoll().validCreation()){
+            logger.warn("CreatePoll: Invalid poll {} from client {}", msg.getRid(), dest.host());
+            failed = true;
+        }
+
+        if(failed){
+            opStatus.put(msg.getRid(), OperationStatusReply.Status.FAILED);
+            sendStatus(msg.getRid(), OperationStatusReply.Status.FAILED, dest);
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean validateVote(Vote<?> msg, Destination dest) {
+        if(repeatedOperation(msg.getRid(), dest)){
+            return false;
+        }
+
+        boolean failed = false;
+        UUID pollID = msg.getPollID();
+        Poll poll = currentPolls.get(pollID);
+
+        if( !poll.validVote(msg) ){
+            logger.warn("Vote: Invalid vote {} from client {}", msg.getRid(), dest.host());
+            failed = true;
+        } else if( !poll.canVote(msg.getClientID())){
+            logger.warn("Vote: Client {} can't vote on poll {}", dest.host(), msg.getPollID());
+            failed = true;
+        } else if( votes.get(pollID).size() > poll.getMaxParticipants()){
+            logger.warn("Vote: This poll {} has reached its max participants", msg.getPollID());
+            failed = true;
+        }
+
+
+        if(failed){
+            opStatus.put(msg.getRid(), OperationStatusReply.Status.FAILED);
+            sendStatus(msg.getRid(), OperationStatusReply.Status.FAILED, dest);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateClosePoll(ClosePoll msg, Destination dest) {
+        if(repeatedOperation(msg.getRid(), dest)){
+            return false;
+        }
+
+        boolean failed = false;
+        var pollID = msg.getPollID();
+        Poll poll = currentPolls.get(pollID);
+        if( !pollCreators.get(poll).equals(msg.getClientID()) ){
+            logger.warn("ClosePoll: Client {} is not authorized to vote in the poll {}", dest.host(), msg.getRid());
+            failed = true;
+        }
+
+        if(failed){
+            opStatus.put(msg.getRid(), OperationStatusReply.Status.FAILED);
+            sendStatus(msg.getRid(), OperationStatusReply.Status.FAILED, dest);
+            return false;
+        }
+
+        return true;
+    }
 }

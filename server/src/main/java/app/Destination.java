@@ -1,4 +1,4 @@
-package app.open_goods;
+package app;
 
 import pt.unl.fct.di.novasys.network.data.Host;
 

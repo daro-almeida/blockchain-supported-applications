@@ -74,6 +74,9 @@ public abstract class Poll {
         return authorization == Authorization.OPEN || authorized.contains(key);
     }
 
+    public abstract boolean validCreation();
+
+
     public static final ISerializer<Poll> serializer = new ISerializer<>() {
 
         @Override

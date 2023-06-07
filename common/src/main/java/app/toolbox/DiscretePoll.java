@@ -39,6 +39,11 @@ public class DiscretePoll extends Poll{
         return false;
     }
 
+    @Override
+    public boolean validCreation() {
+        return !values.isEmpty();
+    }
+
     public static final ISerializer<DiscretePoll> serializer = new ISerializer<>() {
         @Override
         public void serialize(DiscretePoll poll, ByteBuf out) throws IOException {
@@ -71,5 +76,7 @@ public class DiscretePoll extends Poll{
                 return new DiscretePoll(description, maxParticipants, values);
         }
     };
+
+    
 }
 

@@ -1,9 +1,10 @@
 package app.open_goods;
 
 import app.BlockChainApplication;
+import app.Destination;
+import app.OperationStatusReply;
 import app.WriteOperation;
-import app.open_goods.messages.client.replies.OperationStatusReply;
-import app.open_goods.messages.client.replies.OperationStatusReply.Status;
+import app.OperationStatusReply.Status;
 import app.open_goods.messages.client.requests.Cancel;
 import app.open_goods.messages.client.requests.IssueOffer;
 import app.open_goods.messages.client.requests.IssueWant;

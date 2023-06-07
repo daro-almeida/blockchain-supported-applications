@@ -1,8 +1,8 @@
 package app.toolbox;
 
+import app.OperationStatusReply;
 import app.WriteOperation;
 import app.open_goods.messages.client.replies.GenericClientReply;
-import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.requests.CheckOperationStatus;
 import app.open_goods.timers.ExpiredOperation;
 import app.open_goods.timers.NextCheck;

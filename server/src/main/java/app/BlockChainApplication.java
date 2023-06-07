@@ -1,8 +1,6 @@
 package app;
 
-import app.open_goods.Destination;
 import app.open_goods.messages.client.replies.GenericClientReply;
-import app.open_goods.messages.client.replies.OperationStatusReply;
 import app.open_goods.messages.client.requests.CheckOperationStatus;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;

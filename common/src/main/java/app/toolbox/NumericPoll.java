@@ -43,6 +43,11 @@ public class NumericPoll extends Poll{
         return false;
     }
 
+    @Override
+    public boolean validCreation() {
+        return min < max;
+    }
+
     public static final ISerializer<NumericPoll> serializer = new ISerializer<NumericPoll>() {
         @Override
         public void serialize(NumericPoll poll, ByteBuf out) throws IOException {
