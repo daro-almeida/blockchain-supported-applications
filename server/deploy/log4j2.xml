@@ -16,9 +16,9 @@
         <Logger level="info" name="pt.unl.fct.di.novasys.network"/>
         <Logger level="info" name="pt.unl.fct.di.novasys.channel"/>
         <Logger level="info" name="pt.unl.fct.di.novasys.babel"/>
-
+        <Logger level="warn" name="blockchain.BlockChainProtocol"/>
         <Root level="info">
-            <AppenderRef ref="Console" level="info"/>
+            <AppenderRef ref="Console" level="warn"/>
             <AppenderRef ref="MyFile" level="info"/>
         </Root>
     </Loggers>

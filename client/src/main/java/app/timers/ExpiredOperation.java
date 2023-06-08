@@ -1,4 +1,4 @@
-package app.open_goods.timers;
+package app.timers;
 
 import pt.unl.fct.di.novasys.babel.generic.ProtoTimer;
 import pt.unl.fct.di.novasys.babel.generic.signed.SignedProtoMessage;

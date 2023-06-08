@@ -1,7 +1,9 @@
-# Blockchain-Supported Open Goods Market
+# Blockchain-Supported Applications
 
-- Simple market application logic example.
-- Using custom blockchain design.
+- Implemented toy Applications:
+    - Open Goods Market application with Digital Cash.
+    - Toolbox application to create polls with Differential Privacy
+- Using simple custom blockchain design.
 - Using [Practical Byzantine Fault Tolerance (PBFT)](https://www.usenix.org/legacy/publications/library/proceedings/osdi99/full_papers/castro/castro.ps) as consensus algorithm.
 
 ## Build

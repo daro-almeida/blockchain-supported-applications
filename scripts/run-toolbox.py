@@ -54,7 +54,7 @@ def run_replicas(num: int, ops_block: int, ignore_request_block: dict, invalid_b
         subprocess.Popen(cmd)
 
 
-def run_clients(num: int, ops_sec: int, folder: str):
+def run_clients(num: int, ops_sec: int, folder: str, epsilon: float):
     if num == 0:
         return
 
@@ -80,7 +80,9 @@ def run_clients(num: int, ops_sec: int, folder: str):
         "metrics_name=clients",
         "server_proto=600",
         f"ops_sec={ops_sec}",
-        f"metrics_folder={folder}"
+        f"metrics_folder={folder}",
+
+        f"epsilon={epsilon}"
     ]
     subprocess.Popen(cmd)
 
@@ -103,6 +105,7 @@ if '__main__' == __name__:
     parser.add_argument("-f", "--folder", type=str, default="metrics/results/", help="Folder to store metrics")
     parser.add_argument("-ir", "--ignore_request_block", type=json.loads, default={}, help="JSON map format. Key is replica id, value is block number to ignore requests (as leader) from other replicas. Example: '{\"1\": 10, \"2\": 50}'")
     parser.add_argument("-ib", "--invalid_block", type=int, default=-1, help="Block number to send invalid block to other replicas (as leader) (only for replica 1)")
+    parser.add_argument("-e", "--epsilon", type=float, default=1.0, help="Epsilon value for DP")
 
     args = parser.parse_args()
 
@@ -111,7 +114,7 @@ if '__main__' == __name__:
     print(f"Waiting {pause}s to start clients")
     time.sleep(pause)
     print(f"Starting {args.clients} clients")
-    run_clients(args.clients, args.ops_sec, args.folder)
+    run_clients(args.clients, args.ops_sec, args.folder, args.epsilon)
 
     if args.duration <= 0:
         wait_for_enter()

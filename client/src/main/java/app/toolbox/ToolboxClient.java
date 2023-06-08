@@ -4,9 +4,9 @@ import app.OperationStatusReply;
 import app.WriteOperation;
 import app.open_goods.messages.client.replies.GenericClientReply;
 import app.open_goods.messages.client.requests.CheckOperationStatus;
-import app.open_goods.timers.ExpiredOperation;
-import app.open_goods.timers.NextCheck;
-import app.open_goods.timers.NextOperation;
+import app.timers.ExpiredOperation;
+import app.timers.NextCheck;
+import app.timers.NextOperation;
 import app.toolbox.messages.*;
 import io.netty.channel.EventLoopGroup;
 import metrics.Metrics;
@@ -26,10 +26,8 @@ import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ServerFailedEvent
 import pt.unl.fct.di.novasys.channel.simpleclientserver.events.ServerUpEvent;
 import pt.unl.fct.di.novasys.network.NetworkManager;
 import pt.unl.fct.di.novasys.network.data.Host;
-import utils.Crypto;
 
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -68,11 +66,14 @@ public class ToolboxClient {
     private final long operation_timeout;
 	private final int sendPeriod;
 
-	private final float createPollChance;
+	private final double createPollChance;
+	private final double epsilon;
+	private final double delta;
+	private final double maxDiffVotes; // for discrete polls
 
 	// Object = Distribution
 	private final Map<UUID, Pair<Poll, Object>> openPolls = new ConcurrentHashMap<>();
-	private final Map<UUID, Integer > numberVotes = new ConcurrentHashMap<>();
+	private final Map<UUID, Set<Short>> voted = new ConcurrentHashMap<>();
 
     private final KeyStore keystore;
 
@@ -101,14 +102,12 @@ public class ToolboxClient {
 					"Satisfaction Level with Current Job at NOVA SST",
 					0.0, 10.0,
 					Poll.Authorization.OPEN,
-					new NormalDistribution(8.0, 0.5)),
+					new NormalDistribution(8.0, 1.5)),
 	};
 
     private final Host[] servers;
 
-    private final Babel b;
-
-    public static void main(String[] args) throws InvalidParameterException, IOException,
+	public static void main(String[] args) throws InvalidParameterException, IOException,
             HandlerRegistrationException, ProtocolAlreadyExistsException, GeneralSecurityException {
         Properties props =
                 Babel.loadConfig(Arrays.copyOfRange(args, 0, args.length), "config.properties");
@@ -136,7 +135,11 @@ public class ToolboxClient {
 		this.operation_timeout = Long.parseLong(props.getProperty(OPERATION_TIMEOUT));
 
 		this.application_proto_number = Short.parseShort(props.getProperty(APP_SERVER_PROTO));
-		this.createPollChance = Float.parseFloat(props.getProperty("create_poll_chance", "0.0"));
+
+		this.createPollChance = Double.parseDouble(props.getProperty("create_poll_chance", "0.0"));
+		this.epsilon = Double.parseDouble(props.getProperty("epsilon", "1.0."));
+		this.delta = Double.parseDouble(props.getProperty("delta", "0.05"));
+		this.maxDiffVotes = Double.parseDouble(props.getProperty("max_diff_votes", "0.01"));
 
 		String keyStoreLocation = props.getProperty(KEY_STORE_FILE);
 		char[] password = props.getProperty(KEY_STORE_PASSWORD).toCharArray();
@@ -157,7 +160,7 @@ public class ToolboxClient {
 
 		EventLoopGroup nm = NetworkManager.createNewWorkerGroup();
 
-		this.b = Babel.getInstance();
+		Babel b = Babel.getInstance();
 
 		this.clients = new ClientInstance[number_of_clients];
 		for(short i = 1; i <= number_of_clients; i++) {
@@ -170,7 +173,7 @@ public class ToolboxClient {
 			this.clients[i].init(props);
 		}
 
-		this.b.start();
+		b.start();
 
 		try {
 			Thread.sleep(2000);
@@ -195,9 +198,8 @@ public class ToolboxClient {
     		
     	private Host myPrimaryServer;
     	private int myPrimaryChannel;
-    	
-    	private final Babel b;
-    	private final HashMap<UUID,Long> pending;
+
+		private final HashMap<UUID,Long> pending;
     	private final EventLoopGroup nm;
 		private final Random rand = new Random(System.currentTimeMillis());
 
@@ -208,9 +210,8 @@ public class ToolboxClient {
 			this.identity = keystore.getCertificate(client_name).getPublicKey();
 			this.key = (PrivateKey) keystore.getKey(this.client_name, password);
 			this.nm = nm;
-			
-			this.b = b;
-			this.b.registerProtocol(this);	
+
+			b.registerProtocol(this);
 			
 			this.pending = new HashMap<>();
 		}
@@ -296,10 +297,10 @@ public class ToolboxClient {
 		}
 		
 		public void handleGenericClientReplyMessage(GenericClientReply gcr, Host from, short sourceProto, int channelID ) {
-			if(this.pending.containsKey(gcr.getrID())) {
-				long time = System.currentTimeMillis();
-				//Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
-			} //Else nothing to be done
+//			if(this.pending.containsKey(gcr.getrID())) {
+//				long time = System.currentTimeMillis();
+//				Metrics.writeMetric("operation_reply", "latency", Long.toString(time - pending.get(gcr.getrID())));
+//			} //Else nothing to be done
 		}
 
 		public void handleNextCheckTimer(NextCheck nc, long delay) {
@@ -318,95 +319,150 @@ public class ToolboxClient {
 			}
 		}
 
+		private double calculateEpsilon(int numExpectedVotes, double sensitivity) {
+			if (delta <= 0 || maxDiffVotes <= 0 || sensitivity <= 0) {
+				assert epsilon >= 0;
+				return epsilon;
+			}
+			else
+				return (sensitivity * Math.log(numExpectedVotes/delta)) / (maxDiffVotes * numExpectedVotes);
+		}
+
+		private double calculateTruthProbability(double epsilon) {
+			double expPowEpsilon = Math.exp(epsilon);
+			return (expPowEpsilon)/(expPowEpsilon + 1);
+		}
+
+		private LaplaceDistribution noiseDistribution(double min, double max, double epsilon) {
+			return new LaplaceDistribution(0 ,(max-min)/epsilon);
+		}
+
+		private DiscretePoll createDiscretePoll(UUID pollId, DiscretePollValues pollValues) {
+			DiscretePoll poll;
+			int maxParticipants;
+			if (pollValues.authorization() == Poll.Authorization.OPEN) {
+				maxParticipants = clients.length;
+				poll = new DiscretePoll(pollValues.description(), maxParticipants, pollValues.values());
+			} else {
+				var authorized = createAuthorizedSet(clients.length);
+				maxParticipants = authorized.size();
+				poll = new DiscretePoll(pollValues.description(), maxParticipants, authorized, pollValues.values());
+			}
+			var epsilon = calculateEpsilon(maxParticipants, 1.0);
+			openPolls.put(pollId, Pair.of(poll, new DiscretePollVotingInfo(pollValues.voteDistribution(),
+					calculateTruthProbability(epsilon))));
+			voted.put(pollId, ConcurrentHashMap.newKeySet());
+			Metrics.writeMetric("poll_create", "pollId", pollId.toString(), "type", poll.getType().toString(),
+					"description", poll.getDescription(), "epsilon", Double.toString(epsilon));
+
+			return poll;
+		}
+
+		private NumericPoll createNumericPoll(UUID pollId, NumericPollValues pollValues) {
+			NumericPoll poll;
+			int maxParticipants;
+			if (pollValues.authorization() == Poll.Authorization.OPEN) {
+				maxParticipants = clients.length;
+				poll = new NumericPoll(pollValues.description(), maxParticipants, pollValues.min(), pollValues.max());
+			} else {
+				var authorized = createAuthorizedSet(clients.length);
+				maxParticipants = authorized.size();
+				poll = new NumericPoll(pollValues.description(), maxParticipants, authorized, pollValues.min(), pollValues.max());
+			}
+			//var epsilon = calculateEpsilon(maxParticipants, pollValues.max() - pollValues.min());
+			var epsilon = calculateEpsilon(maxParticipants, 0.0);
+			openPolls.put(pollId, Pair.of(poll, new NumericPollVotingInfo(pollValues.voteDistribution(),
+					noiseDistribution(pollValues.min(), pollValues.max(), epsilon))));
+			voted.put(pollId, new HashSet<>());
+			Metrics.writeMetric("poll_create", "pollId", pollId.toString(), "type", poll.getType().toString(),
+					"description", poll.getDescription(), "epsilon", Double.toString(epsilon));
+
+			return poll;
+		}
+
 		public void sendOperation() {
-			try {
-				WriteOperation op = null;
-				var canVoteOn = canVote();
-				var id = UUID.randomUUID();
-				if ((canVoteOn.isEmpty() && createPollChance > 0.0) || rand.nextFloat() <= createPollChance) {
-					Poll poll;
-					if (rand.nextFloat() < 0.5) {
-						var pollValues = discretePollValues[rand.nextInt(discretePollValues.length)];
-
-						if (pollValues.authorization() == Poll.Authorization.OPEN)
-							poll = new DiscretePoll(pollValues.description(), clients.length, pollValues.values());
-						else {
-							var authorized = createAuthorizedSet(clients.length);
-							poll = new DiscretePoll(pollValues.description(), authorized.size(), authorized, pollValues.values());
+			synchronized (ClientInstance.class) {
+				try {
+					WriteOperation op;
+					var canVoteOn = canVote();
+					var id = UUID.randomUUID();
+					if ((canVoteOn.isEmpty() && createPollChance > 0.0) || rand.nextDouble() <= createPollChance) {
+						Poll poll;
+						if (rand.nextDouble() < 0.5) {
+							var pollValues = discretePollValues[rand.nextInt(discretePollValues.length)];
+							poll = createDiscretePoll(id, pollValues);
+						} else {
+							var pollValues = numericPollValues[rand.nextInt(numericPollValues.length)];
+							poll = createNumericPoll(id, pollValues);
 						}
-						openPolls.put(id, Pair.of(poll, pollValues.voteDistribution()));
+
+						op = new CreatePoll(id, identity, poll);
+					} else if (!canVoteOn.isEmpty()) {
+						var entry = canVoteOn.get(rand.nextInt(canVoteOn.size()));
+						var pollId = entry.getKey();
+						var poll = entry.getValue().getKey();
+
+						switch (poll.getType()) {
+							case DISCRETE -> {
+								var discretePoll = (DiscretePoll) poll;
+								var info = (DiscretePollVotingInfo) entry.getValue().getValue();
+								var trueVoteValue = info.voteDistribution().sample();
+								int noisyVoteValue;
+								if (rand.nextDouble() < info.truthProbability()) {
+									noisyVoteValue = trueVoteValue;
+								} else {
+									noisyVoteValue = rand.nextInt(0, discretePoll.getValues().size() - 1);
+									if (noisyVoteValue == trueVoteValue)
+										noisyVoteValue = discretePoll.getValues().size() - 1;
+								}
+								op = new DiscreteVote(id, identity, pollId, noisyVoteValue);
+								assert discretePoll.validVote((Vote<?>) op);
+								Metrics.writeMetric("poll_vote", "pollId", pollId.toString(), "trueVoteValue",
+										Integer.toString(trueVoteValue), "noisyVoteValue", Integer.toString(noisyVoteValue));
+							}
+							case NUMERIC -> {
+								var numericPoll = (NumericPoll) poll;
+								var info = (NumericPollVotingInfo) entry.getValue().getValue();
+								double voteValue;
+								do {
+									voteValue = info.voteDistribution().sample();
+								} while (voteValue < numericPoll.getMin() || voteValue > numericPoll.getMax());
+								var noisyVoteValue = voteValue + info.noiseDistribution().sample();
+								do {
+									if (noisyVoteValue < numericPoll.getMin())
+										noisyVoteValue += (numericPoll.getMin() - noisyVoteValue) * 2;
+									else if (noisyVoteValue > numericPoll.getMax())
+										noisyVoteValue -= (noisyVoteValue - numericPoll.getMax()) * 2;
+								} while (noisyVoteValue < numericPoll.getMin() || noisyVoteValue > numericPoll.getMax());
+								op = new NumericVote(id, identity, pollId, noisyVoteValue);
+								Metrics.writeMetric("poll_vote", "pollId", pollId.toString(), "trueVoteValue",
+										Double.toString(voteValue), "noisyVoteValue", Double.toString(((NumericVote) op).getValue()));
+							}
+							default -> throw new IllegalStateException("Unexpected poll type value: " + poll.getType());
+						}
+						voted.get(pollId).add(client_id);
+
+						if (voted.get(pollId).size() == poll.getMaxParticipants()) {
+							Metrics.writeMetric("poll_complete", "pollId", pollId.toString(), "numVotes",
+									Integer.toString(voted.get(pollId).size()));
+							logger.info("Poll complete: {}", pollId);
+							openPolls.remove(pollId);
+							voted.remove(pollId);
+						}
 					} else {
-						var pollValues = numericPollValues[rand.nextInt(numericPollValues.length)];
-
-						if (pollValues.authorization() == Poll.Authorization.OPEN)
-							poll = new NumericPoll(pollValues.description(), clients.length, pollValues.min(), pollValues.max());
-						else {
-							var authorized = createAuthorizedSet(clients.length);
-							poll = new NumericPoll(pollValues.description(), authorized.size(), authorized, pollValues.min(), pollValues.max());
-						}
-						openPolls.put(id, Pair.of(poll, pollValues.voteDistribution()));
-					}
-					numberVotes.put(id, 0);
-
-					Metrics.writeMetric("poll_create", "pollId", id.toString(), "type", poll.getType().toString(), "description", poll.getDescription());
-					op = new CreatePoll(id, identity, poll);
-				} else if (!canVoteOn.isEmpty()) {
-					var entry = canVoteOn.get(rand.nextInt(canVoteOn.size()));
-					var pollId = entry.getKey();
-					var poll = entry.getValue().getKey();
-
-					switch (poll.getType()) {
-						case DISCRETE -> {
-							var discretePoll = (DiscretePoll) poll;
-							var voteDistribution = (AbstractIntegerDistribution) entry.getValue().getValue();
-							var trueVoteValue =  voteDistribution.sample();
-							op = new DiscreteVote(id, identity, pollId, trueVoteValue);
-							assert discretePoll.validVote((Vote<?>) op);
-							//TODO noisyVoteValue = ...
-
-							Metrics.writeMetric("poll_vote", "pollId", pollId.toString(), "trueVoteValue",
-									Integer.toString(trueVoteValue), "noisyVoteValue", "");
-
-						}
-						case NUMERIC -> {
-							var numericPoll = (NumericPoll) poll;
-							var voteDistribution = (AbstractRealDistribution) entry.getValue().getValue();
-							double voteValue;
-							do {
-								voteValue = voteDistribution.sample();
-								op = new NumericVote(id, identity, pollId, voteValue);
-							} while (!numericPoll.validVote((Vote<?>) op));
-							//TODO noisyVoteValue = ...
-							Metrics.writeMetric("poll_vote", "pollId", pollId.toString(), "trueVoteValue",
-									Double.toString(voteValue), "noisyVoteValue", "");
-						}
-						default -> throw new IllegalStateException("Unexpected poll type value: " + poll.getType());
-					}
-
-					if (!numberVotes.containsKey(pollId))
 						return;
-
-					if (numberVotes.get(pollId) >= poll.getMaxParticipants()) {
-						Metrics.writeMetric("poll_complete", "pollId", pollId.toString(), "numVotes",
-								Integer.toString(numberVotes.get(pollId)));
-
-						openPolls.remove(pollId);
-						numberVotes.remove(pollId);
 					}
-					else
-						numberVotes.put(pollId, numberVotes.get(pollId) + 1);
-				}
-				if (op == null)
-					return;
-				this.pending.put(id, System.currentTimeMillis());
-				op.signMessage(key);
-				sendMessage(this.myPrimaryChannel, op, application_proto_number, this.myPrimaryServer, 0);
-				setupTimer(new NextCheck(id), operation_refresh_timer);
-				setupTimer(new ExpiredOperation(id, op), operation_timeout);
 
-			} catch (Exception e) {
-				e.printStackTrace();
-				System.exit(1);
+					this.pending.put(id, System.currentTimeMillis());
+					op.signMessage(key);
+					sendMessage(this.myPrimaryChannel, op, application_proto_number, this.myPrimaryServer, 0);
+					setupTimer(new NextCheck(id), operation_refresh_timer);
+					setupTimer(new ExpiredOperation(id, op), operation_timeout);
+
+				} catch (Exception e) {
+					e.printStackTrace();
+					System.exit(1);
+				}
 			}
 		}
 
@@ -421,50 +477,32 @@ public class ToolboxClient {
 		}
 
 		private List<Map.Entry<UUID, Pair<Poll, Object>>> canVote() {
-			return openPolls.entrySet().stream().filter(e -> e.getValue().getKey().canVote(identity)).toList();
+			return openPolls.entrySet().stream().filter(e -> voted.containsKey(e.getKey()) &&
+					!voted.get(e.getKey()).contains(client_id) &&
+					e.getValue().getKey().canVote(identity)).toList();
 		}
 
 		public void beginSendingOperations() {
-			setupPeriodicTimer(new NextOperation(), 0, sendPeriod);
+			setupPeriodicTimer(new NextOperation(), 2000, sendPeriod);
 		}
 
 		public void createInitialPolls() throws InvalidSerializerException, NoSuchAlgorithmException, SignatureException, InvalidKeyException {
+			var createPolls = new LinkedList<CreatePoll>();
 			for (var pollValues: numericPollValues ) {
 				var id = UUID.randomUUID();
-				NumericPoll poll;
-				if (pollValues.authorization() == Poll.Authorization.OPEN) {
-					poll = new NumericPoll(pollValues.description(), clients.length, pollValues.min(), pollValues.max());
-				} else {
-					var authorized = createAuthorizedSet(clients.length);
-					poll = new NumericPoll(pollValues.description(), authorized.size(), authorized, pollValues.min(), pollValues.max());
-				}
-				openPolls.put(id, Pair.of(poll, pollValues.voteDistribution()));
-				numberVotes.put(id,0);
-
-				this.pending.put(id, System.currentTimeMillis());
-				Metrics.writeMetric("poll_create", "pollId", id.toString(), "type", poll.getType().toString(), "description", poll.getDescription());
-				var op = new CreatePoll(id, identity, poll);
-				op.signMessage(key);
-				sendMessage(this.myPrimaryChannel, op, application_proto_number, this.myPrimaryServer, 0);
-				setupTimer(new NextCheck(id), operation_refresh_timer);
-				setupTimer(new ExpiredOperation(id, op), operation_timeout);
+				var poll = createNumericPoll(id, pollValues);
+				createPolls.add(new CreatePoll(id, identity, poll));
 			}
 
 			for (var pollValues: discretePollValues ) {
 				var id = UUID.randomUUID();
-				DiscretePoll poll;
-				if (pollValues.authorization() == Poll.Authorization.OPEN) {
-					poll = new DiscretePoll(pollValues.description(), clients.length, pollValues.values());
-				} else {
-					var authorized = createAuthorizedSet(clients.length);
-					poll = new DiscretePoll(pollValues.description(), authorized.size(), authorized, pollValues.values());
-				}
-				openPolls.put(id, Pair.of(poll, pollValues.voteDistribution()));
-				numberVotes.put(id,0);
+				var poll = createDiscretePoll(id, pollValues);
+				createPolls.add(new CreatePoll(id, identity, poll));
+			}
 
+			for (var op : createPolls) {
+				var id = op.getRid();
 				this.pending.put(id, System.currentTimeMillis());
-				Metrics.writeMetric("poll_create", "pollId", id.toString(), "type", poll.getType().toString(), "description", poll.getDescription());
-				var op = new CreatePoll(id, identity, poll);
 				op.signMessage(key);
 				sendMessage(this.myPrimaryChannel, op, application_proto_number, this.myPrimaryServer, 0);
 				setupTimer(new NextCheck(id), operation_refresh_timer);

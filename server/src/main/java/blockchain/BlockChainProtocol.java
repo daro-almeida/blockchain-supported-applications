@@ -272,8 +272,10 @@ public class BlockChainProtocol extends GenericProtocol {
 			triggerNotification(new ExecutedOperation(req));
 		});
 
-		cancelTimer(leaderIdleTimer);
-		leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
+		if (!amLeader()) {
+			cancelTimer(leaderIdleTimer);
+			leaderIdleTimer = setupTimer(new LeaderIdleTimer(), liveTimeout);
+		}
 	}
 
 	/*
