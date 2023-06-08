@@ -20,9 +20,11 @@ jar files will be placed in the ``deploy`` folders of the submodules ``server`` 
 ### Single Test
 ```shell
 python3 scripts/run-open_goods.py -h
+python3 scripts/run-toolbox.py -h
 ```
-Provides runtime arguments descriptions.
+Provide runtime arguments descriptions.
 ### Multiple Tests
 ```shell
-python3 scripts/run-experiments.py
+python3 scripts/run-experiments-open_goods.py
+python3 scripts/run-experiments-toolbox.py
 ```
