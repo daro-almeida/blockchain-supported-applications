@@ -22,6 +22,7 @@ import utils.Utils;
 import java.io.IOException;
 import java.security.PublicKey;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Toolbox extends BlockChainApplication {
 
@@ -31,10 +32,10 @@ public class Toolbox extends BlockChainApplication {
     public final static short PROTO_ID = 600;
 
     // incoming currentPolls
-    private final Map<UUID, Poll> currentPolls = new HashMap<>();
-    private final Map<UUID, Poll> finishedPolls = new HashMap<>();
-    private final Map<UUID, PublicKey> pollCreators = new HashMap<>();
-    private final Map<UUID, Set<Vote<?>>> votes = new HashMap<>();
+    private final Map<UUID, Poll> currentPolls = new ConcurrentHashMap<>();
+    private final Map<UUID, Poll> finishedPolls = new ConcurrentHashMap<>();
+    private final Map<UUID, PublicKey> pollCreators = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<Vote<?>>> votes = new ConcurrentHashMap<>();
 
     public static void main(String[] args) throws Exception {
         Properties props = Babel.loadConfig(Arrays.copyOfRange(args, 0, args.length), "config.properties");

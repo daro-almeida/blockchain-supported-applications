@@ -81,25 +81,25 @@ public class ToolboxClient {
 
 	DiscretePollValues[] discretePollValues = {
 			new DiscretePollValues(
-					"Favorite Pizza Topping",
-					Set.of("Spinach", "Pineapple", "Green peppers", "Black olives", "Extra cheese", "Bacon", "Sausage", "Pepperoni", "Mushrooms", "Onions"),
+					"D01",
+					Set.of("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"),
 					Poll.Authorization.OPEN,
-					new BinomialDistribution(9, 0.7)),
+					new UniformIntegerDistribution(0, 9)),
 			new DiscretePollValues(
-					"Annual Income Bracket",
-					Set.of("Less than $25,000", "$25,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999", "$100,000 to $124,999", "$125,000 to $149,999", "$150,000 or more"),
+					"D02",
+					Set.of("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"),
 					Poll.Authorization.OPEN,
-					new BinomialDistribution(6, 0.2)),
+					new BinomialDistribution(9, 0.3)),
 	};
 
 	NumericPollValues[] numericPollValues = {
 			new NumericPollValues(
-					"Final Grade in CSD",
-					0.0, 20.0,
+					"N01",
+					0.0, 10.0,
 					Poll.Authorization.OPEN,
-					new UniformRealDistribution(8.0, 20.0)),
+					new NormalDistribution(5.0, 1.5)),
 			new NumericPollValues(
-					"Satisfaction Level with Current Job at NOVA SST",
+					"N02",
 					0.0, 10.0,
 					Poll.Authorization.OPEN,
 					new NormalDistribution(8.0, 1.5)),
@@ -137,7 +137,7 @@ public class ToolboxClient {
 		this.application_proto_number = Short.parseShort(props.getProperty(APP_SERVER_PROTO));
 
 		this.createPollChance = Double.parseDouble(props.getProperty("create_poll_chance", "0.0"));
-		this.epsilon = Double.parseDouble(props.getProperty("epsilon", "1.0."));
+		this.epsilon = Double.parseDouble(props.getProperty("epsilon", "1.0"));
 		this.delta = Double.parseDouble(props.getProperty("delta", "0.05"));
 		this.maxDiffVotes = Double.parseDouble(props.getProperty("max_diff_votes", "0.01"));
 
@@ -427,12 +427,16 @@ public class ToolboxClient {
 								do {
 									voteValue = info.voteDistribution().sample();
 								} while (voteValue < numericPoll.getMin() || voteValue > numericPoll.getMax());
-								var noisyVoteValue = voteValue + info.noiseDistribution().sample();
+//								var noisyVoteValue = voteValue + info.noiseDistribution().sample();
+//								do {
+//									if (noisyVoteValue < numericPoll.getMin())
+//										noisyVoteValue += (numericPoll.getMin() - noisyVoteValue) * 2;
+//									else if (noisyVoteValue > numericPoll.getMax())
+//										noisyVoteValue -= (noisyVoteValue - numericPoll.getMax()) * 2;
+//								} while (noisyVoteValue < numericPoll.getMin() || noisyVoteValue > numericPoll.getMax());
+								double noisyVoteValue;
 								do {
-									if (noisyVoteValue < numericPoll.getMin())
-										noisyVoteValue += (numericPoll.getMin() - noisyVoteValue) * 2;
-									else if (noisyVoteValue > numericPoll.getMax())
-										noisyVoteValue -= (noisyVoteValue - numericPoll.getMax()) * 2;
+									noisyVoteValue = voteValue + info.noiseDistribution().sample();
 								} while (noisyVoteValue < numericPoll.getMin() || noisyVoteValue > numericPoll.getMax());
 								op = new NumericVote(id, identity, pollId, noisyVoteValue);
 								Metrics.writeMetric("poll_vote", "pollId", pollId.toString(), "trueVoteValue",
