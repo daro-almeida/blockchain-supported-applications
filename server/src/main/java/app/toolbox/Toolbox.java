@@ -3,16 +3,15 @@ package app.toolbox;
 import app.BlockChainApplication;
 import app.Destination;
 import app.OperationStatusReply;
-import app.WriteOperation;
 import app.OperationStatusReply.Status;
-import app.toolbox.Poll.Type;
-import app.toolbox.messages.*;
+import app.WriteOperation;
+import app.toolbox.messages.ClosePoll;
+import app.toolbox.messages.CreatePoll;
+import app.toolbox.messages.Vote;
 import blockchain.BlockChainProtocol;
 import blockchain.notifications.ExecutedOperation;
 import consensus.PBFTProtocol;
 import metrics.Metrics;
-
-import org.apache.commons.lang3.Validate;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pt.unl.fct.di.novasys.babel.core.Babel;
@@ -33,14 +32,9 @@ public class Toolbox extends BlockChainApplication {
 
     // incoming currentPolls
     private final Map<UUID, Poll> currentPolls = new HashMap<>();
-
-    //closedPolls
     private final Map<UUID, Poll> finishedPolls = new HashMap<>();
-    //quando alguém faz close ou quando o numero de votos é igual ao numero de votos
-
-    private final Map<Poll, PublicKey> pollCreators = new HashMap<>();
-
-    private final Map<UUID, Set<Vote>> votes = new HashMap<>();
+    private final Map<UUID, PublicKey> pollCreators = new HashMap<>();
+    private final Map<UUID, Set<Vote<?>>> votes = new HashMap<>();
 
     public static void main(String[] args) throws Exception {
         Properties props = Babel.loadConfig(Arrays.copyOfRange(args, 0, args.length), "config.properties");
@@ -91,7 +85,7 @@ public class Toolbox extends BlockChainApplication {
     }
 
     private void handleCreatePollMessage(CreatePoll msg, Host host, short protoId, int channelId) {
-        logger.info("CreatePoll received id={} description={}", msg.getRid(), msg.getPoll().description);
+        logger.debug("CreatePoll received id={} description={}", msg.getRid(), msg.getPoll().description);
         
         var dest = new Destination(host, protoId);
         if(!validateCreatePoll(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
@@ -102,7 +96,7 @@ public class Toolbox extends BlockChainApplication {
     }
 
     private void handleVoteMessage(Vote<?> msg, Host host, short protoId, int channelId) {
-        logger.info("Vote received id={} pollId={} value={}", msg.getRid(), msg.getPollID(), msg.getValue());
+        logger.debug("Vote received id={} pollId={} value={}", msg.getRid(), msg.getPollID(), msg.getValue());
         
         var dest = new Destination(host, protoId);
         if(!validateVote(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
@@ -113,14 +107,13 @@ public class Toolbox extends BlockChainApplication {
     }
 
     private void handleClosePollMessage(ClosePoll msg, Host host, short protoId, int channelId) {
-        
+
         var dest = new Destination(host, protoId);
         if(!validateClosePoll(msg, dest) || !authenticatedOperation(msg, msg.getRid(), msg.getClientID(), dest)){
             return;
         }
 
         submitOperation(msg.getRid(), msg.getBytes(), msg.getSignature(), msg.getClientID(), dest);
-
     }
 
     protected void handleExecutedOperation(ExecutedOperation notif, short sourceProto) {
@@ -142,12 +135,13 @@ public class Toolbox extends BlockChainApplication {
             return;
         }
 
-        logger.info("Executed CreatePoll operation: {}", createPoll.getRid());
+        logger.info("Executed CreatePoll: pollId={} description={}", createPoll.getRid(), createPoll.getPoll().getDescription());
+
         currentPolls.put(createPoll.getRid(), createPoll.getPoll());
-        pollCreators.put(createPoll.getPoll(), createPoll.getClientID());
+        pollCreators.put(createPoll.getRid(), createPoll.getClientID());
+        votes.put(createPoll.getRid(), new HashSet<>());
 
         changeAndNotifyStatus(createPoll.getRid(), Status.EXECUTED);
-
     }
 
     private void handleExecutedClosePoll(ClosePoll closePoll) {
@@ -156,13 +150,13 @@ public class Toolbox extends BlockChainApplication {
             return;
         }
 
-        logger.info("Executed ClosePoll operation: {}", closePoll.getRid());
+        logger.info("Executed ClosePoll: pollId={}", closePoll.getRid());
 
         UUID pollID = closePoll.getPollID();
         Poll poll = currentPolls.get(pollID);
         finishedPolls.put(pollID, poll);
-
         currentPolls.remove(pollID);
+
         changeAndNotifyStatus(closePoll.getRid(), Status.EXECUTED);
     }
 
@@ -172,19 +166,19 @@ public class Toolbox extends BlockChainApplication {
             return;
         }
 
-        logger.info("Executed Vote operation: {}", vote.getRid());
+        logger.info("Executed Vote: pollId={} value={}", vote.getRid(), vote.getValue());
 
         UUID pollID = vote.getPollID();
         Poll poll = currentPolls.get(pollID);
-
         votes.get(pollID).add(vote);
 
         if(votes.get(pollID).size() == poll.getMaxParticipants()){
             finishedPolls.put(pollID, poll);
+            currentPolls.remove(pollID);
+            logger.info("Poll {} finished", pollID);
         }
 
         changeAndNotifyStatus(vote.getRid(), Status.EXECUTED);
-
     }
 
     private boolean validateCreatePoll(CreatePoll msg, Destination dest) {
@@ -219,17 +213,16 @@ public class Toolbox extends BlockChainApplication {
         UUID pollID = msg.getPollID();
         Poll poll = currentPolls.get(pollID);
 
-        if( !poll.validVote(msg) ){
+        if( poll == null){
+            logger.warn("Vote: Poll {} doesn't exist or was closed", msg.getPollID());
+            failed = true;
+        } else if( !poll.validVote(msg) ){
             logger.warn("Vote: Invalid vote {} from client {}", msg.getRid(), dest.host());
             failed = true;
         } else if( !poll.canVote(msg.getClientID())){
             logger.warn("Vote: Client {} can't vote on poll {}", dest.host(), msg.getPollID());
             failed = true;
-        } else if( votes.get(pollID).size() > poll.getMaxParticipants()){
-            logger.warn("Vote: This poll {} has reached its max participants", msg.getPollID());
-            failed = true;
         }
-
 
         if(failed){
             opStatus.put(msg.getRid(), OperationStatusReply.Status.FAILED);
@@ -247,8 +240,12 @@ public class Toolbox extends BlockChainApplication {
         boolean failed = false;
         var pollID = msg.getPollID();
         Poll poll = currentPolls.get(pollID);
-        if( !pollCreators.get(poll).equals(msg.getClientID()) ){
-            logger.warn("ClosePoll: Client {} is not authorized to vote in the poll {}", dest.host(), msg.getRid());
+
+        if( poll == null){
+            logger.warn("ClosePoll: Poll {} doesn't exist or was closed", msg.getPollID());
+            failed = true;
+        } else if ( !pollCreators.get(pollID).equals(msg.getClientID()) ){
+            logger.warn("ClosePoll: Client {} is not authorized to close poll {}", dest.host(), msg.getRid());
             failed = true;
         }
 
